@@ -13,6 +13,7 @@ redis = Redis(
 )
 
 DATA_KEY = "bot_data"
+_initialized = False
 
 async def get_data():
     raw = await redis.get(DATA_KEY)
@@ -215,12 +216,12 @@ app_bot.add_handler(
 
 app = FastAPI()
 
-@app.get("/")
-async def home():
-    return {"status": "running"}
-
 @app.post("/")
 async def webhook(request: Request):
+    global _initialized
+    if not _initialized:
+        await app_bot.initialize()
+        _initialized = True
     json_data = await request.json()
     update = Update.de_json(json_data, app_bot.bot)
     await app_bot.process_update(update)
