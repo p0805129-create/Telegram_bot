@@ -3,9 +3,9 @@ import json
 from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from upstash_redis.asyncio import Redis
-from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
@@ -18,10 +18,9 @@ DATA_KEY = "bot_data"
 
 _initialized = False
 
-# ----- تنظیمات ثابت (در صورت نیاز تغییر بده) -----
-ORDER_CHANNEL_ID = "@viewpluse"        # آیدی عددی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "viewpluse"        # نام کاربری کانال برای ساخت لینک دعوت (بدون @)
-# اگر کانال خصوصی است، به جای لینک از متد export_chat_invite_link استفاده می‌شود.
+# ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
+ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME ="viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
 
 async def get_data():
@@ -30,12 +29,12 @@ async def get_data():
         return json.loads(raw)
     else:
         return {
-            "users": {"7724653657": 10000},   # موجودی اولیه
-            "tasks": [],                      # سفارش‌های فعال
-            "completed": {},                  # کاربرانی که سفارش را انجام داده‌اند
+            "users": {"7724653657": 10000},
+            "tasks": [],
+            "completed": {},
             "next_task_id": 1,
-            "states": {},                     # حالت‌های کاربر (مثلاً در انتظار ارسال آیدی)
-            "daily_claims": {}                # زمان آخرین دریافت سکه روزانه
+            "states": {},
+            "daily_claims": {}
         }
 
 async def set_data(data):
@@ -49,11 +48,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["users"].setdefault(user_id, 0)
     await set_data(data)
 
-    # ساخت کیبورد پایین
     keyboard = ReplyKeyboardMarkup(
         [
             [KeyboardButton("💰 دریافت سکه رایگان")],
-            [KeyboardButton("👥 سفارش ممبر")]
+            [KeyboardButton("👥 سفارش ممبر")],
+            [KeyboardButton("👤 حساب کاربری")],
+            [KeyboardButton("📦 پیگیری سفارش")]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
@@ -63,16 +63,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "به ربات خوش آمدید! یکی از گزینه‌ها را انتخاب کنید:",
         reply_markup=keyboard
     )
+
 # ---------- دریافت سکه رایگان ----------
 
-async def free_coins_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎁 دریافت سکه روزانه", callback_data="daily_coins")],
         [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
     ])
-    await query.edit_message_text("یکی را انتخاب کن:", reply_markup=keyboard)
+    await update.message.reply_text("یکی را انتخاب کن:", reply_markup=keyboard)
 
 async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -87,7 +86,6 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("شما امروز سکه روزانه را دریافت کرده‌اید!", show_alert=True)
         return
 
-    # اعطای ۷ سکه
     data["users"][user_id] = data["users"].get(user_id, 0) + 7
     data["daily_claims"][user_id] = today
     await set_data(data)
@@ -105,9 +103,7 @@ PACKAGES = {
     "member_500": {"count": 500, "cost": 700, "reward": 2},
 }
 
-async def order_member_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
         [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
@@ -116,12 +112,12 @@ async def order_member_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("👥️ 100 ممبر | 150 🪙", callback_data="member_100")],
         [InlineKeyboardButton("👥️ 500 ممبر | 700 🪙", callback_data="member_500")],
     ])
-    await query.edit_message_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
+    await update.message.reply_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
 
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    package_key = query.data  # مثلاً member_10
+    package_key = query.data
     user_id = str(query.from_user.id)
 
     data = await get_data()
@@ -130,7 +126,6 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("موجودی شما کافی نیست!", show_alert=True)
         return
 
-    # ذخیره حالت: در انتظار دریافت آیدی کانال
     data["states"][user_id] = {"awaiting_order": package_key}
     await set_data(data)
 
@@ -145,11 +140,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     state = data["states"].get(user_id, {})
 
+    # اگر کاربر در انتظار ارسال آیدی کانال است
     if "awaiting_order" in state:
         package_key = state.pop("awaiting_order")
         target_channel_id = update.message.text.strip()
 
-        # بررسی هزینه و کسر سکه
         cost = PACKAGES[package_key]["cost"]
         if data["users"].get(user_id, 0) < cost:
             await update.message.reply_text("موجودی کافی نیست.")
@@ -157,15 +152,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data["users"][user_id] -= cost
 
-        # دریافت لینک دعوت کانال (اگر ربات ادمین باشد)
         try:
             invite_link = await context.bot.export_chat_invite_link(chat_id=target_channel_id)
         except Exception as e:
-            # اگر نتوانست لینک دعوت بگیرد، از لینک عمومی استفاده می‌کنیم
             invite_link = f"https://t.me/{CHANNEL_USERNAME}"
             await update.message.reply_text("⚠️ نتوانستم لینک دعوت کانال را دریافت کنم، از لینک عمومی استفاده می‌کنم.")
 
-        # ساخت سفارش
         task = {
             "id": data["next_task_id"],
             "type": "member",
@@ -181,8 +173,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["next_task_id"] += 1
         await set_data(data)
 
-        # ارسال سفارش به کانال
+        # سه دکمه: مشاهده کانال، عضویت، دریافت سکه
         keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("مشاهده کانال", url=invite_link)],
             [InlineKeyboardButton("عضویت", url=invite_link)],
             [InlineKeyboardButton("دریافت سکه", callback_data=f"claim_member_{task['id']}")]
         ])
@@ -193,7 +186,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"📢 سفارش ممبر جدید!\n"
                     f"👥 تعداد: {task['count']} ممبر\n"
                     f"💰 پاداش هر عضو: {task['reward']} سکه\n"
-                    f"➡️ برای دریافت سکه، ابتدا عضو کانال شوید و سپس دکمه «دریافت سکه» را بزنید."
+                    f"➡️ ابتدا کانال را مشاهده کنید، سپس عضو شوید و بعد دکمه «دریافت سکه» را بزنید."
                 ),
                 reply_markup=keyboard
             )
@@ -206,27 +199,34 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"هزینه: {cost} سکه\n"
             f"پس از تکمیل اعضا، سفارش از کانال حذف خواهد شد."
         )
+        return
 
-    else:
-    # منوی پایین
+    # اگر متن یکی از دکمه‌های منوی پایین باشد
     if update.message.text == "💰 دریافت سکه رایگان":
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎁 دریافت سکه روزانه", callback_data="daily_coins")],
-            [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
-        ])
-        await update.message.reply_text("یکی را انتخاب کن:", reply_markup=keyboard)
+        await free_coins_from_menu(update, context)
         return
 
     if update.message.text == "👥 سفارش ممبر":
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
-            [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
-            [InlineKeyboardButton("👥️ 50 ممبر | 80 🪙", callback_data="member_50")],
-            [InlineKeyboardButton("👥️ 80 ممبر | 100 🪙", callback_data="member_80")],
-            [InlineKeyboardButton("👥️ 100 ممبر | 150 🪙", callback_data="member_100")],
-            [InlineKeyboardButton("👥️ 500 ممبر | 700 🪙", callback_data="member_500")],
-        ])
-        await update.message.reply_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
+        await order_member_from_menu(update, context)
+        return
+
+    if update.message.text == "👤 حساب کاربری":
+        bal = data["users"].get(user_id, 0)
+        await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
+        return
+
+    if update.message.text == "📦 پیگیری سفارش":
+        user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
+        if not user_orders:
+            await update.message.reply_text("شما سفارش فعالی ندارید.")
+            return
+        for order in user_orders:
+            await update.message.reply_text(
+                f"📦 سفارش #{order['id']}\n"
+                f"👥 تعداد درخواستی: {order['count']}\n"
+                f"✅ دریافت شده: {order['claimed']}\n"
+                f"➖ باقی مانده: {order['count'] - order['claimed']}"
+            )
         return
 
 # ---------- دریافت سکه بعد از عضویت ----------
@@ -247,7 +247,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("شما قبلاً از این سفارش سکه گرفته‌اید!", show_alert=True)
         return
 
-    # بررسی عضویت در کانال هدف
     try:
         member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=user_id)
         if member.status not in ["member", "administrator", "creator"]:
@@ -257,16 +256,14 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=True)
         return
 
-    # اعطای پاداش
+    # اعطای پاداش و نمایش موجودی جدید
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
     data["completed"].setdefault(str(task_id), []).append(str(user_id))
     task["claimed"] += 1
 
-    # اگر تعداد تکمیل شده به حد نصاب رسید، سفارش را حذف کن
     if task["claimed"] >= task["count"]:
         data["tasks"].remove(task)
         await set_data(data)
-        # ویرایش پیام کانال به تکمیل شده
         try:
             await query.edit_message_text("✅ سفارش تکمیل شد و حذف گردید.")
         except:
@@ -274,7 +271,12 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await set_data(data)
 
-    await query.answer(f"✅ {task['reward']} سکه دریافت کردید!", show_alert=True)
+    # نمایش پیام بالای کانال با مقدار سکه و موجودی
+    current_balance = data["users"][str(user_id)]
+    await query.answer(
+        f"✅ {task['reward']} سکه اضافه شد!\n💰 موجودی فعلی: {current_balance} سکه",
+        show_alert=True
+    )
 
 # ---------- سایر دستورات ----------
 
@@ -289,11 +291,13 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("balance", balance))
-app_bot.add_handler(CallbackQueryHandler(free_coins_menu, pattern="^free_coins$"))
 app_bot.add_handler(CallbackQueryHandler(daily_coins, pattern="^daily_coins$"))
-app_bot.add_handler(CallbackQueryHandler(order_member_menu, pattern="^order_member_menu$"))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(claim_member, pattern="^claim_member_"))
+app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), lambda update, context: account_from_menu(update, context)))
+app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), lambda update, context: track_order_from_menu(update, context)))
 app_bot.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
