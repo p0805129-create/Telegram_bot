@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -13,7 +14,14 @@ redis = Redis(
 )
 
 DATA_KEY = "bot_data"
+
 _initialized = False
+
+# ----- تنظیمات ثابت (در صورت نیاز تغییر بده) -----
+ORDER_CHANNEL_ID = "@Membergir_ViewPlus"        # آیدی عددی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "Membergir_ViewPlus"        # نام کاربری کانال برای ساخت لینک دعوت (بدون @)
+# اگر کانال خصوصی است، به جای لینک از متد export_chat_invite_link استفاده می‌شود.
+# ---------------------------------------------------
 
 async def get_data():
     raw = await redis.get(DATA_KEY)
@@ -21,38 +29,230 @@ async def get_data():
         return json.loads(raw)
     else:
         return {
-            "users": {"7724653657": 10000},   # user_id به صورت رشته
-            "tasks": [],
-            "completed": {},
+            "users": {"7724653657": 10000},   # موجودی اولیه
+            "tasks": [],                      # سفارش‌های فعال
+            "completed": {},                  # کاربرانی که سفارش را انجام داده‌اند
             "next_task_id": 1,
-            "channels": {},
-            "states": {}
+            "states": {},                     # حالت‌های کاربر (مثلاً در انتظار ارسال آیدی)
+            "daily_claims": {}                # زمان آخرین دریافت سکه روزانه
         }
 
 async def set_data(data):
     await redis.set(DATA_KEY, json.dumps(data))
 
-# ---------- Handler ها ----------
+# ---------- منوی اصلی ----------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = await get_data()
     data["users"].setdefault(user_id, 0)
     await set_data(data)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💰 دریافت سکه رایگان", callback_data="free_coins")],
+        [InlineKeyboardButton("👥 سفارش ممبر", callback_data="order_member_menu")]
+    ])
     await update.message.reply_text(
-        "سلام! به ربات تبادل سین و ممبر خوش اومدی.\n"
-        "برای ثبت کانال: /register\n"
-        "برای سفارش: /order\n"
-        "برای مشاهده تسک‌ها: /tasks\n"
-        "برای مشاهده امتیاز: /balance"
+        "به ربات خوش آمدید! یکی از گزینه‌ها را انتخاب کنید:",
+        reply_markup=keyboard
     )
 
-async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------- دریافت سکه رایگان ----------
+
+async def free_coins_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎁 دریافت سکه روزانه", callback_data="daily_coins")],
+        [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
+    ])
+    await query.edit_message_text("یکی را انتخاب کن:", reply_markup=keyboard)
+
+async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    data = await get_data()
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    last_claim = data["daily_claims"].get(user_id)
+
+    if last_claim == today:
+        await query.answer("شما امروز سکه روزانه را دریافت کرده‌اید!", show_alert=True)
+        return
+
+    # اعطای ۷ سکه
+    data["users"][user_id] = data["users"].get(user_id, 0) + 7
+    data["daily_claims"][user_id] = today
+    await set_data(data)
+
+    await query.edit_message_text("✅ ۷ سکه به موجودی شما اضافه شد!\nموجودی فعلی: " + str(data["users"][user_id]))
+
+# ---------- سفارش ممبر ----------
+
+PACKAGES = {
+    "member_10": {"count": 10, "cost": 20, "reward": 2},
+    "member_20": {"count": 20, "cost": 40, "reward": 2},
+    "member_50": {"count": 50, "cost": 80, "reward": 2},
+    "member_80": {"count": 80, "cost": 100, "reward": 2},
+    "member_100": {"count": 100, "cost": 150, "reward": 2},
+    "member_500": {"count": 500, "cost": 700, "reward": 2},
+}
+
+async def order_member_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
+        [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
+        [InlineKeyboardButton("👥️ 50 ممبر | 80 🪙", callback_data="member_50")],
+        [InlineKeyboardButton("👥️ 80 ممبر | 100 🪙", callback_data="member_80")],
+        [InlineKeyboardButton("👥️ 100 ممبر | 150 🪙", callback_data="member_100")],
+        [InlineKeyboardButton("👥️ 500 ممبر | 700 🪙", callback_data="member_500")],
+    ])
+    await query.edit_message_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
+
+async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    package_key = query.data  # مثلاً member_10
+    user_id = str(query.from_user.id)
+
+    data = await get_data()
+    cost = PACKAGES[package_key]["cost"]
+    if data["users"].get(user_id, 0) < cost:
+        await query.answer("موجودی شما کافی نیست!", show_alert=True)
+        return
+
+    # ذخیره حالت: در انتظار دریافت آیدی کانال
+    data["states"][user_id] = {"awaiting_order": package_key}
+    await set_data(data)
+
+    await query.edit_message_text(
+        f"شما پکیج {PACKAGES[package_key]['count']} ممبر را انتخاب کردید.\n"
+        f"هزینه: {cost} سکه\n"
+        "لطفاً آیدی عددی کانال/گروه خود را ارسال کنید:"
+    )
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = await get_data()
-    data["states"][user_id] = {"awaiting_reg": True}
-    await set_data(data)
-    await update.message.reply_text("لطفاً آیدی عددی کانال/گروه خود را بفرستید:")
+    state = data["states"].get(user_id, {})
+
+    if "awaiting_order" in state:
+        package_key = state.pop("awaiting_order")
+        target_channel_id = update.message.text.strip()
+
+        # بررسی هزینه و کسر سکه
+        cost = PACKAGES[package_key]["cost"]
+        if data["users"].get(user_id, 0) < cost:
+            await update.message.reply_text("موجودی کافی نیست.")
+            return
+
+        data["users"][user_id] -= cost
+
+        # دریافت لینک دعوت کانال (اگر ربات ادمین باشد)
+        try:
+            invite_link = await context.bot.export_chat_invite_link(chat_id=target_channel_id)
+        except Exception as e:
+            # اگر نتوانست لینک دعوت بگیرد، از لینک عمومی استفاده می‌کنیم
+            invite_link = f"https://t.me/{CHANNEL_USERNAME}"
+            await update.message.reply_text("⚠️ نتوانستم لینک دعوت کانال را دریافت کنم، از لینک عمومی استفاده می‌کنم.")
+
+        # ساخت سفارش
+        task = {
+            "id": data["next_task_id"],
+            "type": "member",
+            "owner_id": int(user_id),
+            "target_id": target_channel_id,
+            "target_link": invite_link,
+            "count": PACKAGES[package_key]["count"],
+            "cost": cost,
+            "reward": PACKAGES[package_key]["reward"],
+            "claimed": 0
+        }
+        data["tasks"].append(task)
+        data["next_task_id"] += 1
+        await set_data(data)
+
+        # ارسال سفارش به کانال
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("عضویت", url=invite_link)],
+            [InlineKeyboardButton("دریافت سکه", callback_data=f"claim_member_{task['id']}")]
+        ])
+        try:
+            await context.bot.send_message(
+                chat_id=ORDER_CHANNEL_ID,
+                text=(
+                    f"📢 سفارش ممبر جدید!\n"
+                    f"👥 تعداد: {task['count']} ممبر\n"
+                    f"💰 پاداش هر عضو: {task['reward']} سکه\n"
+                    f"➡️ برای دریافت سکه، ابتدا عضو کانال شوید و سپس دکمه «دریافت سکه» را بزنید."
+                ),
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
+
+        await update.message.reply_text(
+            f"✅ سفارش شما ثبت شد.\n"
+            f"تعداد: {task['count']} ممبر\n"
+            f"هزینه: {cost} سکه\n"
+            f"پس از تکمیل اعضا، سفارش از کانال حذف خواهد شد."
+        )
+
+    else:
+        # اگر در حالت خاصی نبود، پیام نادیده گرفته می‌شود
+        pass
+
+# ---------- دریافت سکه بعد از عضویت ----------
+
+async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    task_id = int(query.data.split("_")[-1])
+
+    data = await get_data()
+    task = next((t for t in data["tasks"] if t["id"] == task_id), None)
+    if not task:
+        await query.answer("این سفارش دیگر موجود نیست.", show_alert=True)
+        return
+
+    if str(user_id) in data.get("completed", {}).get(str(task_id), []):
+        await query.answer("شما قبلاً از این سفارش سکه گرفته‌اید!", show_alert=True)
+        return
+
+    # بررسی عضویت در کانال هدف
+    try:
+        member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=user_id)
+        if member.status not in ["member", "administrator", "creator"]:
+            await query.answer("شما عضو کانال نیستید!", show_alert=True)
+            return
+    except Exception as e:
+        await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=True)
+        return
+
+    # اعطای پاداش
+    data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
+    data["completed"].setdefault(str(task_id), []).append(str(user_id))
+    task["claimed"] += 1
+
+    # اگر تعداد تکمیل شده به حد نصاب رسید، سفارش را حذف کن
+    if task["claimed"] >= task["count"]:
+        data["tasks"].remove(task)
+        await set_data(data)
+        # ویرایش پیام کانال به تکمیل شده
+        try:
+            await query.edit_message_text("✅ سفارش تکمیل شد و حذف گردید.")
+        except:
+            pass
+    else:
+        await set_data(data)
+
+    await query.answer(f"✅ {task['reward']} سکه دریافت کردید!", show_alert=True)
+
+# ---------- سایر دستورات ----------
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -60,151 +260,16 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
-async def order(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("👁 سین (ویو)", callback_data="order_view")],
-        [InlineKeyboardButton("👥 ممبر", callback_data="order_member")]
-    ]
-    await update.message.reply_text("چه چیزی نیاز دارید؟", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = str(query.from_user.id)
-    data_db = await get_data()
-
-    if data == "order_view":
-        data_db["states"][user_id] = {"awaiting_order": "view"}
-        await set_data(data_db)
-        await query.edit_message_text("لینک پست کانال خود را بفرستید:")
-    elif data == "order_member":
-        data_db["states"][user_id] = {"awaiting_order": "member"}
-        await set_data(data_db)
-        await query.edit_message_text("آیدی عددی کانال/گروه خود را بفرستید (مثل -1001234567890):")
-    elif data.startswith("confirm_view_"):
-        task_id = int(data.split("_")[-1])
-        task = next((t for t in data_db["tasks"] if t["id"] == task_id), None)
-        if not task:
-            await query.edit_message_text("این تسک دیگر موجود نیست.")
-            return
-        if query.from_user.id == task["owner_id"]:
-            await query.answer("شما نمی‌توانید تسک خودتان را انجام دهید!", show_alert=True)
-            return
-        if str(task_id) in data_db["completed"] and user_id in data_db["completed"][str(task_id)]:
-            await query.answer("شما قبلاً این تسک را انجام داده‌اید!", show_alert=True)
-            return
-        data_db["users"][user_id] = data_db["users"].get(user_id, 0) + task["reward"]
-        data_db["completed"].setdefault(str(task_id), []).append(user_id)
-        data_db["tasks"].remove(task)
-        await set_data(data_db)
-        await query.edit_message_text(f"✅ مشاهده تأیید شد! {task['reward']} سکه دریافت کردید.")
-    elif data.startswith("check_member_"):
-        task_id = int(data.split("_")[-1])
-        task = next((t for t in data_db["tasks"] if t["id"] == task_id), None)
-        if not task:
-            await query.edit_message_text("این تسک دیگر موجود نیست.")
-            return
-        if query.from_user.id == task["owner_id"]:
-            await query.answer("شما نمی‌توانید تسک خودتان را انجام دهید!", show_alert=True)
-            return
-        if str(task_id) in data_db["completed"] and user_id in data_db["completed"][str(task_id)]:
-            await query.answer("شما قبلاً این تسک را انجام داده‌اید!", show_alert=True)
-            return
-        try:
-            member = await context.bot.get_chat_member(chat_id=task["target"], user_id=query.from_user.id)
-            if member.status in ["member", "administrator", "creator"]:
-                data_db["users"][user_id] = data_db["users"].get(user_id, 0) + task["reward"]
-                data_db["completed"].setdefault(str(task_id), []).append(user_id)
-                data_db["tasks"].remove(task)
-                await set_data(data_db)
-                await query.edit_message_text(f"✅ عضویت تأیید شد! {task['reward']} سکه دریافت کردید.")
-            else:
-                await query.answer("شما عضو این کانال/گروه نیستید!", show_alert=True)
-        except Exception as e:
-            await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال/گروه ادمین است.", show_alert=True)
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data_db = await get_data()
-    state = data_db["states"].get(user_id, {})
-
-    if state.get("awaiting_reg"):
-        data_db["channels"][user_id] = update.message.text
-        state["awaiting_reg"] = False
-        await set_data(data_db)
-        await update.message.reply_text("✅ کانال/گروه ثبت شد.")
-        return
-
-    order_type = state.get("awaiting_order")
-    if order_type == "view":
-        link = update.message.text
-        cost = 1   # COST_VIEW
-        if data_db["users"].get(user_id, 0) < cost:
-            await update.message.reply_text("❌ موجودی کافی نیست. از /balance موجودی خود را ببینید.")
-            return
-        data_db["users"][user_id] -= cost
-        task = {
-            "id": data_db["next_task_id"],
-            "type": "view",
-            "owner_id": int(user_id),
-            "target": link,
-            "cost": cost,
-            "reward": 1   # REWARD_VIEW
-        }
-        data_db["tasks"].append(task)
-        data_db["next_task_id"] += 1
-        state["awaiting_order"] = None
-        await set_data(data_db)
-        await update.message.reply_text(f"✅ سفارش سین ثبت شد.\nهزینه: {cost} سکه\nلینک: {link}")
-    elif order_type == "member":
-        chat_id = update.message.text
-        cost = 2   # COST_MEMBER
-        if data_db["users"].get(user_id, 0) < cost:
-            await update.message.reply_text("❌ موجودی کافی نیست. از /balance موجودی خود را ببینید.")
-            return
-        data_db["users"][user_id] -= cost
-        task = {
-            "id": data_db["next_task_id"],
-            "type": "member",
-            "owner_id": int(user_id),
-            "target": chat_id,
-            "cost": cost,
-            "reward": 2   # REWARD_MEMBER
-        }
-        data_db["tasks"].append(task)
-        data_db["next_task_id"] += 1
-        state["awaiting_order"] = None
-        await set_data(data_db)
-        await update.message.reply_text(f"✅ سفارش ممبر ثبت شد.\nهزینه: {cost} سکه\nآیدی: {chat_id}")
-
-async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    data_db = await get_data()
-    available = [t for t in data_db["tasks"] if t["owner_id"] != user_id]
-    if not available:
-        await update.message.reply_text("فعلاً تسکی برای انجام وجود ندارد.")
-        return
-    for task in available:
-        if task["type"] == "view":
-            text = f"👁 تسک سین (ویو)\nلینک: {task['target']}\nپاداش: {task['reward']} سکه"
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(
-                "تأیید مشاهده", callback_data=f"confirm_view_{task['id']}")]])
-        else:
-            text = f"👥 تسک ممبر\nآیدی کانال/گروه: {task['target']}\nپاداش: {task['reward']} سکه"
-            keyboard = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("بررسی عضویت", callback_data=f"check_member_{task['id']}")]])
-        await update.message.reply_text(text, reply_markup=keyboard)
-
-# ---------- Application ----------
+# ---------- راه‌اندازی اپلیکیشن ----------
 
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
-app_bot.add_handler(CommandHandler("register", register))
-app_bot.add_handler(CommandHandler("order", order))
-app_bot.add_handler(CommandHandler("tasks", tasks_list))
 app_bot.add_handler(CommandHandler("balance", balance))
-app_bot.add_handler(CallbackQueryHandler(button))
+app_bot.add_handler(CallbackQueryHandler(free_coins_menu, pattern="^free_coins$"))
+app_bot.add_handler(CallbackQueryHandler(daily_coins, pattern="^daily_coins$"))
+app_bot.add_handler(CallbackQueryHandler(order_member_menu, pattern="^order_member_menu$"))
+app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
+app_bot.add_handler(CallbackQueryHandler(claim_member, pattern="^claim_member_"))
 app_bot.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -215,6 +280,10 @@ app_bot.add_handler(
 # ---------- FastAPI ----------
 
 app = FastAPI()
+
+@app.get("/")
+async def home():
+    return {"status": "running"}
 
 @app.post("/")
 async def webhook(request: Request):
