@@ -130,9 +130,9 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_data(data)
 
     await query.edit_message_text(
-        f"شما پکیج {PACKAGES[package_key]['count']} ممبر را انتخاب کردید.\n"
-        f"هزینه: {cost} سکه\n"
-        "لطفاً آیدی عددی کانال/گروه خود را ارسال کنید:"
+    f"شما پکیج {PACKAGES[package_key]['count']} ممبر را انتخاب کردید.\n"
+    f"هزینه: {cost} سکه\n"
+    "لطفاً لینک کانال/گروه خود (مثلاً https://t.me/username) یا نام کاربری (با @) را ارسال کنید:"
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,6 +146,79 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_input = update.message.text.strip()
 
     # اگر کاربر لینک فرستاد
+    if raw_input.startswith("https://t.me/"):
+        raw_input = raw_input.split("/")[-1]
+        if raw_input.startswith("+"):
+            # لینک خصوصی است؛ نمی‌توانیم آیدی عددی را استخراج کنیم
+            await update.message.reply_text(
+                "❌ برای کانال/گروه خصوصی، لطفاً آیدی عددی را ارسال کنید یا یک پیام از کانال را فوروارد کنید."
+            )
+            return
+        target = "@" + raw_input
+        invite_link = f"https://t.me/{raw_input}"
+    elif raw_input.startswith("@"):
+        target = raw_input
+        invite_link = f"https://t.me/{raw_input[1:]}"
+    else:
+        # فرض می‌کنیم آیدی عددی است
+        target = raw_input
+        try:
+            invite_link = await context.bot.export_chat_invite_link(chat_id=target)
+        except Exception as e:
+            await update.message.reply_text(
+                "❌ نتوانستم لینک دعوت بسازم. مطمئن شوید ربات در کانال ادمین است و آیدی صحیح است."
+            )
+            return
+
+    target_channel_id = target
+    cost = PACKAGES[package_key]["cost"]
+    if data["users"].get(user_id, 0) < cost:
+        await update.message.reply_text("موجودی کافی نیست.")
+        return
+
+    data["users"][user_id] -= cost
+
+    task = {
+        "id": data["next_task_id"],
+        "type": "member",
+        "owner_id": int(user_id),
+        "target_id": target_channel_id,
+        "target_link": invite_link,
+        "count": PACKAGES[package_key]["count"],
+        "cost": cost,
+        "reward": PACKAGES[package_key]["reward"],
+        "claimed": 0
+    }
+    data["tasks"].append(task)
+    data["next_task_id"] += 1
+    await set_data(data)
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("مشاهده کانال", url=invite_link)],
+        [InlineKeyboardButton("عضویت", url=invite_link)],
+        [InlineKeyboardButton("دریافت سکه", callback_data=f"claim_member_{task['id']}")]
+    ])
+    try:
+        await context.bot.send_message(
+            chat_id=ORDER_CHANNEL_ID,
+            text=(
+                f"📢 سفارش ممبر جدید!\n"
+                f"👥 تعداد: {task['count']} ممبر\n"
+                f"💰 پاداش هر عضو: {task['reward']} سکه\n"
+                f"➡️ ابتدا کانال را مشاهده کنید، سپس عضو شوید و بعد دکمه «دریافت سکه» را بزنید."
+            ),
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
+
+    await update.message.reply_text(
+        f"✅ سفارش شما ثبت شد.\n"
+        f"تعداد: {task['count']} ممبر\n"
+        f"هزینه: {cost} سکه\n"
+        f"پس از تکمیل اعضا، سفارش از کانال حذف خواهد شد."
+    )
+    return
     if raw_input.startswith("https://t.me/"):
         raw_input = raw_input.split("/")[-1]
         if raw_input.startswith("+"):
