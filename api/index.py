@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from upstash_redis.asyncio import Redis
+from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 TOKEN = os.environ.get("BOT_TOKEN")
 
@@ -48,15 +49,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["users"].setdefault(user_id, 0)
     await set_data(data)
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💰 دریافت سکه رایگان", callback_data="free_coins")],
-        [InlineKeyboardButton("👥 سفارش ممبر", callback_data="order_member_menu")]
-    ])
+    # ساخت کیبورد پایین
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("💰 دریافت سکه رایگان")],
+            [KeyboardButton("👥 سفارش ممبر")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
     await update.message.reply_text(
         "به ربات خوش آمدید! یکی از گزینه‌ها را انتخاب کنید:",
         reply_markup=keyboard
     )
-
 # ---------- دریافت سکه رایگان ----------
 
 async def free_coins_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,8 +208,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     else:
-        # اگر در حالت خاصی نبود، پیام نادیده گرفته می‌شود
-        pass
+    # منوی پایین
+    if update.message.text == "💰 دریافت سکه رایگان":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎁 دریافت سکه روزانه", callback_data="daily_coins")],
+            [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
+        ])
+        await update.message.reply_text("یکی را انتخاب کن:", reply_markup=keyboard)
+        return
+
+    if update.message.text == "👥 سفارش ممبر":
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
+            [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
+            [InlineKeyboardButton("👥️ 50 ممبر | 80 🪙", callback_data="member_50")],
+            [InlineKeyboardButton("👥️ 80 ممبر | 100 🪙", callback_data="member_80")],
+            [InlineKeyboardButton("👥️ 100 ممبر | 150 🪙", callback_data="member_100")],
+            [InlineKeyboardButton("👥️ 500 ممبر | 700 🪙", callback_data="member_500")],
+        ])
+        await update.message.reply_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
+        return
 
 # ---------- دریافت سکه بعد از عضویت ----------
 
