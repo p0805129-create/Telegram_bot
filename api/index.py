@@ -18,8 +18,8 @@ DATA_KEY = "bot_data"
 _initialized = False
 
 # ----- تنظیمات ثابت (در صورت نیاز تغییر بده) -----
-ORDER_CHANNEL_ID = "@Membergir_ViewPlus"        # آیدی عددی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "Membergir_ViewPlus"        # نام کاربری کانال برای ساخت لینک دعوت (بدون @)
+ORDER_CHANNEL_ID = "@viewpluse"        # آیدی عددی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "viewpluse"        # نام کاربری کانال برای ساخت لینک دعوت (بدون @)
 # اگر کانال خصوصی است، به جای لینک از متد export_chat_invite_link استفاده می‌شود.
 # ---------------------------------------------------
 
