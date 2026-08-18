@@ -19,8 +19,8 @@ DATA_KEY = "bot_data"
 _initialized = False
 
 # ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
-ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
 
 async def get_data():
