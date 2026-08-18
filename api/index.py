@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import ReplyKeyboardMarkup, KeyboardButton
@@ -18,24 +18,33 @@ DATA_KEY = "bot_data"
 
 _initialized = False
 
-# ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
+# ----- تنظیمات ثابت -----
+ADMIN_ID = 7724653657                 # آیدی عددی ادمین
 ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
 CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
 
 async def get_data():
     raw = await redis.get(DATA_KEY)
+    defaults = {
+        "users": {"7724653657": 100000000},   # موجودی اولیه ادمین
+        "tasks": [],
+        "completed": {},        # {task_id: {user_id: timestamp}}
+        "next_task_id": 1,
+        "states": {},
+        "daily_claims": {}
+    }
     if raw:
-        return json.loads(raw)
+        data = json.loads(raw)
+        for key, value in defaults.items():
+            if key not in data:
+                data[key] = value
+        # اطمینان از ساختار completed
+        if not isinstance(data["completed"], dict):
+            data["completed"] = {}
+        return data
     else:
-        return {
-            "users": {"7724653657": 10000},   # موجودی اولیه ادمین
-            "tasks": [],
-            "completed": {},
-            "next_task_id": 1,
-            "states": {},
-            "daily_claims": {}
-        }
+        return defaults
 
 async def set_data(data):
     await redis.set(DATA_KEY, json.dumps(data))
@@ -52,7 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         data["users"].setdefault(user_id, 0)
 
-    # پردازش لینک ریفرال (اگر وجود داشته باشد)
+    # پردازش لینک ریفرال
     if context.args and len(context.args) > 0:
         arg = context.args[0]
         if arg.startswith("ref_"):
@@ -80,6 +89,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "به ربات خوش آمدید! یکی از گزینه‌ها را انتخاب کنید:",
         reply_markup=keyboard
     )
+
+# ---------- دستور ادمین برای افزایش سکه ----------
+
+async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
+        return
+    try:
+        parts = update.message.text.split()
+        if len(parts) != 3:
+            await update.message.reply_text("فرمت صحیح: /give <user_id> <amount>")
+            return
+        target_id = int(parts[1])
+        amount = int(parts[2])
+        data = await get_data()
+        data["users"][str(target_id)] = data["users"].get(str(target_id), 0) + amount
+        await set_data(data)
+        await update.message.reply_text(f"✅ {amount} سکه به کاربر {target_id} داده شد.")
+    except ValueError:
+        await update.message.reply_text("لطفاً اعداد صحیح وارد کنید.")
 
 # ---------- دریافت سکه رایگان ----------
 
@@ -333,7 +362,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
-    if str(user_id) in data.get("completed", {}).get(str(task_id), []):
+    if str(user_id) in data["completed"].get(str(task_id), {}):
         await query.answer("شما قبلاً سکه را دریافت کرده‌اید", show_alert=False)
         return
 
@@ -346,8 +375,10 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=False)
         return
 
+    # اعطای پاداش
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
-    data["completed"].setdefault(str(task_id), []).append(str(user_id))
+    # ثبت زمان عضویت برای بررسی ترک زودهنگام
+    data["completed"].setdefault(str(task_id), {})[str(user_id)] = datetime.now(timezone.utc).isoformat()
     task["claimed"] += 1
 
     if task["claimed"] >= task["count"]:
@@ -365,6 +396,41 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 {task['reward']} سکه کسب کردید | موجودی: {current_balance} سکه",
         show_alert=False
     )
+
+# ---------- بررسی ترک زودهنگام ----------
+
+async def check_early_leaves():
+    data = await get_data()
+    now = datetime.now(timezone.utc)
+    penalized = False
+
+    for task in data["tasks"]:
+        task_id = str(task["id"])
+        if task_id not in data["completed"]:
+            continue
+        completed_users = data["completed"][task_id]
+        for user_id, joined_at_str in list(completed_users.items()):
+            joined_at = datetime.fromisoformat(joined_at_str)
+            age = now - joined_at
+            if age < timedelta(days=4):
+                # بررسی وضعیت عضویت
+                try:
+                    member = await app_bot.bot.get_chat_member(chat_id=task["target_id"], user_id=int(user_id))
+                    if member.status not in ["member", "administrator", "creator"]:
+                        # کاربر عضو نیست → جریمه
+                        data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
+                        owner_id = str(task["owner_id"])
+                        data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
+                        # حذف کاربر از completed تا دوباره جریمه نشود
+                        del completed_users[user_id]
+                        penalized = True
+                except Exception as e:
+                    # اگر خطا در بررسی داشتیم، نادیده بگیر
+                    pass
+
+    if penalized:
+        await set_data(data)
+    return penalized
 
 # ---------- جذب زیر مجموعه ----------
 
@@ -396,7 +462,7 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text)
 
-# ---------- حساب کاربری و پیگیری سفارش (تعریف جدا) ----------
+# ---------- حساب کاربری و پیگیری سفارش ----------
 
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -418,18 +484,11 @@ async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TY
             f"✅ تعداد ممبر دریافتی: {order['claimed']}"
         )
 
-# ---------- سایر دستورات ----------
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = await get_data()
-    bal = data["users"].get(user_id, 0)
-    await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
-
 # ---------- راه‌اندازی اپلیکیشن ----------
 
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
+app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
 app_bot.add_handler(CallbackQueryHandler(daily_coins, pattern="^daily_coins$"))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
@@ -466,3 +525,12 @@ async def webhook(request: Request):
     update = Update.de_json(json_data, app_bot.bot)
     await app_bot.process_update(update)
     return {"ok": True}
+
+@app.get("/check")
+async def check_endpoint():
+    global _initialized
+    if not _initialized:
+        await app_bot.initialize()
+        _initialized = True
+    penalized = await check_early_leaves()
+    return {"ok": True, "penalized": penalized}
