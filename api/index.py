@@ -19,8 +19,8 @@ DATA_KEY = "bot_data"
 _initialized = False
 
 # ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
-ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
 
 async def get_data():
@@ -29,7 +29,7 @@ async def get_data():
         return json.loads(raw)
     else:
         return {
-            "users": {"7724653657": 10000},
+            "users": {"7724653657": 10000},   # موجودی اولیه ادمین
             "tasks": [],
             "completed": {},
             "next_task_id": 1,
@@ -48,7 +48,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 10
+        data["users"][user_id] = 10   # هدیه ۱۰ سکه برای کاربر جدید
     else:
         data["users"].setdefault(user_id, 0)
 
@@ -107,7 +107,10 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_claim = data["daily_claims"].get(user_id)
 
     if last_claim == today:
-        await query.answer("شما امروز سکه روزانه را دریافت کرده‌اید!", show_alert=True)
+        await query.answer(
+            "شما قبلا سکه‌ی روزانه‌ی خود را دریافت کردید",
+            show_alert=False
+        )
         return
 
     data["users"][user_id] = data["users"].get(user_id, 0) + 7
@@ -116,25 +119,11 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     current_balance = data["users"][user_id]
 
-    # نمایش نوار وضعیت (فقط یک بار)
     await query.answer(
         f"💰 7 سکه کسب کردید | موجودی: {current_balance} سکه",
-        show_alert=True
+        show_alert=False
     )
 
-    # ویرایش پیام برای نمایش موجودی جدید
-    await query.edit_message_text(
-        "✅ ۷ سکه به موجودی شما اضافه شد!\n"
-        f"💰 موجودی فعلی: {current_balance} سکه"
-    )
-
-    # نمایش نوار وضعیت
-    await query.answer(
-        f"💰 7 سکه کسب کردید | موجودی: {current_balance} سکه",
-        show_alert=True
-    )
-
-    # ویرایش پیام برای نمایش موجودی جدید
     await query.edit_message_text(
         "✅ ۷ سکه به موجودی شما اضافه شد!\n"
         f"💰 موجودی فعلی: {current_balance} سکه"
@@ -171,7 +160,7 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     cost = PACKAGES[package_key]["cost"]
     if data["users"].get(user_id, 0) < cost:
-        await query.answer("موجودی شما کافی نیست!", show_alert=True)
+        await query.answer("موجودی شما کافی نیست!", show_alert=False)
         return
 
     data["states"][user_id] = {"awaiting_order": package_key}
@@ -341,20 +330,20 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
-        await query.answer("این سفارش دیگر موجود نیست.", show_alert=True)
+        await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
     if str(user_id) in data.get("completed", {}).get(str(task_id), []):
-        await query.answer("شما قبلاً از این سفارش سکه گرفته‌اید!", show_alert=True)
+        await query.answer("شما قبلاً سکه را دریافت کرده‌اید", show_alert=False)
         return
 
     try:
         member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=user_id)
         if member.status not in ["member", "administrator", "creator"]:
-            await query.answer("شما عضو کانال نیستید!", show_alert=True)
+            await query.answer("شما عضو کانال نیستید!", show_alert=False)
             return
     except Exception as e:
-        await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=True)
+        await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=False)
         return
 
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
@@ -374,7 +363,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_balance = data["users"][str(user_id)]
     await query.answer(
         f"💰 {task['reward']} سکه کسب کردید | موجودی: {current_balance} سکه",
-        show_alert=True
+        show_alert=False
     )
 
 # ---------- جذب زیر مجموعه ----------
