@@ -19,8 +19,8 @@ DATA_KEY = "bot_data"
 _initialized = False
 
 # ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
-ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
 
 async def get_data():
@@ -29,7 +29,7 @@ async def get_data():
         return json.loads(raw)
     else:
         return {
-            "users": {"7724653657": 10000},   # موجودی اولیه ادمین
+            "users": {"7724653657": 10000},
             "tasks": [],
             "completed": {},
             "next_task_id": 1,
@@ -48,20 +48,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 10   # هدیه ۱۰ سکه برای کاربر جدید
+        data["users"][user_id] = 10
     else:
         data["users"].setdefault(user_id, 0)
 
     # پردازش لینک ریفرال (اگر وجود داشته باشد)
-    referrer_id = None
     if context.args and len(context.args) > 0:
         arg = context.args[0]
         if arg.startswith("ref_"):
             ref = arg[4:]
-            if ref.isdigit():
+            if ref.isdigit() and is_new:
                 referrer_id = int(ref)
-                if referrer_id != int(user_id) and is_new:
-                    # دادن ۱۵ سکه به معرف
+                if referrer_id != int(user_id):
                     data["users"][str(referrer_id)] = data["users"].get(str(referrer_id), 0) + 15
 
     await set_data(data)
@@ -102,7 +100,7 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # اول جواب می‌دهیم تا خطای timeout نگیریم
     user_id = str(query.from_user.id)
     data = await get_data()
 
@@ -118,10 +116,13 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_data(data)
 
     current_balance = data["users"][user_id]
+
+    # نمایش نوار وضعیت
     await query.answer(
         f"💰 7 سکه کسب کردید | موجودی: {current_balance} سکه",
         show_alert=True
     )
+
     # ویرایش پیام برای نمایش موجودی جدید
     await query.edit_message_text(
         "✅ ۷ سکه به موجودی شما اضافه شد!\n"
@@ -323,7 +324,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # اول جواب می‌دهیم
     user_id = query.from_user.id
     task_id = int(query.data.split("_")[-1])
 
