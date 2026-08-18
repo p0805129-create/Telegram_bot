@@ -271,19 +271,11 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["states"].pop(user_id, None)
     await set_data(data)
 
-    keyboard = ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("💰 دریافت سکه رایگان")],
-            [KeyboardButton("👥 سفارش ممبر")],
-            [KeyboardButton("👤 حساب کاربری")],
-            [KeyboardButton("📦 پیگیری سفارش")],
-            [KeyboardButton("👥️ جذب زیر مجموعه")],
-            [KeyboardButton("📚 راهنما")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=False
-    )
-    await query.edit_message_text("سفارش لغو شد. به منوی اصلی بازگشتید:", reply_markup=keyboard)
+    # حذف پیام حاوی دکمه‌های شیشه‌ای
+    try:
+        await query.delete_message()
+    except:
+        pass
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
