@@ -18,8 +18,8 @@ DATA_KEY = "bot_data"
 
 _initialized = False
 
-# ----- تنظیمات ثابت -----
-ADMIN_ID = 7724653657                 # آیدی عددی ادمین
+# ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
+ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
 CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 # ---------------------------------------------------
@@ -27,21 +27,18 @@ CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دک
 async def get_data():
     raw = await redis.get(DATA_KEY)
     defaults = {
-        "users": {"7724653657": 100000000},   # موجودی اولیه ادمین
+        "users": {"7724653657": 10000},   # موجودی اولیه ادمین
         "tasks": [],
         "completed": {},        # {task_id: {user_id: timestamp}}
         "next_task_id": 1,
         "states": {},
-        "daily_claims": {}
+        "daily_claims": {}      # بدون استفاده، ولی برای سازگاری
     }
     if raw:
         data = json.loads(raw)
         for key, value in defaults.items():
             if key not in data:
                 data[key] = value
-        # اطمینان از ساختار completed
-        if not isinstance(data["completed"], dict):
-            data["completed"] = {}
         return data
     else:
         return defaults
@@ -115,66 +112,15 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "به بخش دریافت سکه رایگان خوش آمدید💫\n\n"
-        "📌 در این بخش می‌تونید با استفاده از دو روش زیر برای خودتون سکه جمع آوری کنید سپس با سکه های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
-        "👈 دو روش برای جمع آوری الماس وجود دارد:\n\n"
-        "️1⃣ دریافت الماس روزانه: با استفاده از بخش می‌توانید در ربات با زدن یک دکمه مقدار ۷ الماس دریافت کنید.\n\n"
-        "2⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری الماس نمایید.\n\n"
+        "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون سکه جمع آوری کنید سپس با سکه های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
+        "👈 یک روش برای جمع آوری الماس وجود دارد:\n\n"
+        "1️⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری الماس نمایید.\n\n"
         "🫂 همچنین از طریق زیر مجموعه گیری هم می‌تونید تا بی‌نهایت الماس رایگان کسب کنید."
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎁 دریافت سکه روزانه", callback_data="daily_coins")],
         [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
     ])
     await update.message.reply_text(text, reply_markup=keyboard)
-
-async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = str(query.from_user.id)
-    data = await get_data()
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    last_claim = data["daily_claims"].get(user_id)
-
-    if last_claim == today:
-        await query.answer(
-            "شما قبلا سکه‌ی روزانه‌ی خود را دریافت کردید",
-            show_alert=False
-        )
-        return
-
-    data["users"][user_id] = data["users"].get(user_id, 0) + 7
-    data["daily_claims"][user_id] = today
-    await set_data(data)
-
-    current_balance = data["users"][user_id]
-
-    await query.answer(
-        f"💰 7 سکه کسب کردید | موجودی: {current_balance} سکه",
-        show_alert=False
-    )
-
-    await query.edit_message_text(
-        "✅ ۷ سکه به موجودی شما اضافه شد!\n"
-        f"💰 موجودی فعلی: {current_balance} سکه"
-    )
-
-async def daily_coins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = await get_data()
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    last_claim = data["daily_claims"].get(user_id)
-
-    if last_claim == today:
-        await update.message.reply_text("شما قبلاً سکه روزانه را دریافت کرده‌اید.")
-        return
-
-    data["users"][user_id] = data["users"].get(user_id, 0) + 7
-    data["daily_claims"][user_id] = today
-    await set_data(data)
-
-    current_balance = data["users"][user_id]
-    await update.message.reply_text(f"✅ ۷ سکه اضافه شد. موجودی: {current_balance}")
 
 # ---------- سفارش ممبر ----------
 
@@ -431,7 +377,6 @@ async def check_early_leaves():
             joined_at = datetime.fromisoformat(joined_at_str)
             age = now - joined_at
             if age < timedelta(days=4):
-                # بررسی وضعیت عضویت
                 try:
                     member = await app_bot.bot.get_chat_member(chat_id=task["target_id"], user_id=int(user_id))
                     if member.status not in ["member", "administrator", "creator"]:
@@ -439,11 +384,9 @@ async def check_early_leaves():
                         data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
                         owner_id = str(task["owner_id"])
                         data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
-                        # حذف کاربر از completed تا دوباره جریمه نشود
                         del completed_users[user_id]
                         penalized = True
                 except Exception as e:
-                    # اگر خطا در بررسی داشتیم، نادیده بگیر
                     pass
 
     if penalized:
@@ -502,14 +445,20 @@ async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TY
             f"✅ تعداد ممبر دریافتی: {order['claimed']}"
         )
 
+# ---------- سایر دستورات ----------
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = await get_data()
+    bal = data["users"].get(user_id, 0)
+    await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
+
 # ---------- راه‌اندازی اپلیکیشن ----------
 
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
-app_bot.add_handler(CommandHandler("daily", daily_coins_cmd))
-app_bot.add_handler(CallbackQueryHandler(daily_coins, pattern="^daily_coins$"))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
