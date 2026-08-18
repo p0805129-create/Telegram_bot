@@ -158,6 +158,24 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 موجودی فعلی: {current_balance} سکه"
     )
 
+async def daily_coins_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = await get_data()
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    last_claim = data["daily_claims"].get(user_id)
+
+    if last_claim == today:
+        await update.message.reply_text("شما قبلاً سکه روزانه را دریافت کرده‌اید.")
+        return
+
+    data["users"][user_id] = data["users"].get(user_id, 0) + 7
+    data["daily_claims"][user_id] = today
+    await set_data(data)
+
+    current_balance = data["users"][user_id]
+    await update.message.reply_text(f"✅ ۷ سکه اضافه شد. موجودی: {current_balance}")
+
 # ---------- سفارش ممبر ----------
 
 PACKAGES = {
@@ -490,6 +508,7 @@ app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
+app_bot.add_handler(CommandHandler("daily", daily_coins_cmd))
 app_bot.add_handler(CallbackQueryHandler(daily_coins, pattern="^daily_coins$"))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
