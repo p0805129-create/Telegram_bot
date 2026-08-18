@@ -18,10 +18,11 @@ DATA_KEY = "bot_data"
 
 _initialized = False
 
-# ----- تنظیمات ثابت (حتماً این دو را تغییر بده) -----
+# ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
 CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
 async def get_data():
@@ -32,7 +33,7 @@ async def get_data():
         "completed": {},        # {task_id: {user_id: timestamp}}
         "next_task_id": 1,
         "states": {},
-        "daily_claims": {}      # بدون استفاده، ولی برای سازگاری
+        "daily_claims": {}
     }
     if raw:
         data = json.loads(raw)
@@ -45,6 +46,29 @@ async def get_data():
 
 async def set_data(data):
     await redis.set(DATA_KEY, json.dumps(data))
+
+# ---------- بررسی عضویت در کانال‌های اسپانسر ----------
+
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_id = update.effective_user.id
+    for channel in SPONSOR_CHANNELS:
+        try:
+            member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if member.status not in ["member", "administrator", "creator"]:
+                return False
+        except Exception as e:
+            return False
+    return True
+
+async def send_subscription_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "❗️لطفا برای ادامه کار با ربات و حمایت کردن از ما عضو گروه و کانال های زیر شوید👇\n\n"
+        + "\n".join([f"🆔 {ch}" for ch in SPONSOR_CHANNELS])
+        + "\n\n💎اسپانسر ها:\n"
+        + "\n".join([f"🪅{i+1} {ch}" for i, ch in enumerate(SPONSOR_CHANNELS)])
+        + "\n\n❗️پس از عضو شدن برای ربات دستور /start را ارسال کنید✓"
+    )
+    await update.message.reply_text(text)
 
 # ---------- منوی اصلی ----------
 
@@ -83,10 +107,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         one_time_keyboard=False
     )
 
-    await update.message.reply_text(
-        "به ربات خوش آمدید! یکی از گزینه‌ها را انتخاب کنید:",
-        reply_markup=keyboard
+    welcome_text = (
+        "سلام🌹\n"
+        "به ربات ممبرگیر رایگان ویوپلاس خوش اومدی❤️\n"
+        "🤖با این ربات بدون هیچ هزینه ای ممبر بگیر\n\n"
+        "⚠️•حتماً قبل از استفاده از ربات قوانین ربات رو مطالعه بفرمایید.\n\n"
+        "📚•برای آشنایی با ربات و روش کار با آن دستور /Help را ارسال کنید!\n\n"
+        "برای ادامه یک گزینه را انتخاب کنید!👇"
     )
+    await update.message.reply_text(welcome_text, reply_markup=keyboard)
+
+# ---------- دستور /help (نمایش کانال‌های اسپانسر) ----------
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_subscription_message(update, context)
 
 # ---------- دستور ادمین برای افزایش سکه ----------
 
@@ -111,6 +145,11 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- دریافت سکه رایگان ----------
 
 async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # بررسی عضویت
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     text = (
         "به بخش دریافت سکه رایگان خوش آمدید💫\n\n"
         "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون سکه جمع آوری کنید سپس با سکه های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
@@ -126,6 +165,12 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 # ---------- راهنما ----------
 
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # این دکمه از منوی اصلی است، نیازی به بررسی اسپانسر ندارد ولی می‌توان گذاشت
+    # چون در منو اصلی است، احتمالاً کاربر قبلاً بررسی شده است. ولی برای امنیت می‌گذاریم.
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     help_text = (
         "«🤔راهنمای ممبرگیر | ویوپلاس»\n\n"
         "(✅لطفاً تمام متن را با دقت بخوانید✅)\n\n"
@@ -135,7 +180,7 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💰•برای دریافت سکه در ربات چند روش وجود دارد!👇\n\n"
         "💰\\روش اول: \n"
         "عضویت در سفارشات:\n"
-        "شما میتوانید با عضویت در کانال ها و گروه هایی که در کانال سفارشات سرعت ممبر وجود دارد الماس دریافت کنید. برای این کار اول باید عضو کانال ها و گروه ها شوید بعد به کانال سفارشات برگردید سپس روی دریافت الماس کلیک کنید.\n\n"
+        "شما میتوانید با عضویت در کانال ها و گروه هایی که در کانال سفارشات ممبرگیر | ویوپلاس وجود دارد سکه دریافت کنید. برای این کار اول باید عضو کانال ها و گروه ها شوید بعد به کانال سفارشات برگردید سپس روی دریافت سکه کلیک کنید.\n\n"
         "👥\\روش دوم: \n"
         "زیر مجموعه گیری :\n"
         "برای این کار وارد بخش زیر مجموعه گیری میشید و لینک خود را برای دیگران میفرستید !\n\n"
@@ -144,14 +189,14 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⁉️چطوری ربات رو ادمین کنم؟\n\n"
         "⛔️|روش ادمین کردن ربات به این صورت است که وارد کانال یا گروه تون شوید و به قسمت ادمین ها بروید و اضافه کردن ادمین را انتخاب کنید سپس روی سرچ بزنید و ایدی ربات( @Seen_member_jet_bot ) را سرچ کنید و ربات مارا ادمین کنید!\n"
         "●\n"
-        "⁉️ممبر هایی که از طریق ربات سرعت ممبر به کانال و گروه اضافه میشن واقعی هستن؟\n\n"
+        "⁉️ممبر هایی که از طریق ربات ممبرگیر | ویوپلاس به کانال و گروه اضافه میشن واقعی هستن؟\n\n"
         "بله.کاملا واقعی و ایرانی که به دلیل واقعی بودن بازدید هم دارن و اگر از کانال و گروهتون خوششون بیاد ممکنه تا همیشه بمونن و لفت ندن😊\n\n"
         "●\n"
         "⁉️چرا سفارشم تکمیل شده ولی تعداد ممبر دریافتیم کمتر از سفارشم هست؟!\n"
         "(مثلا 10 ممبر سفارش دادم ولی 7 تا اومده )\n"
         "⚠️دو دلیل داره:\n"
         "1⃣یا اون تعداد از قبل عضو کانال یا گروه شما شده بودن اما از سفارشتون سکه گرفتن.\n"
-        "2⃣یا ربات رو ادمین گروه تون نکردید و سفارش دادید.وقتی این کارو کنید ربات  حتی اگر دیگران عضو گروه شما نشن  و روی دکمه دریافت سکه بزنن هم بهشون الماس میده ؛ چون ادمین گروهتون نیست!\n"
+        "2⃣یا ربات رو ادمین گروه تون نکردید و سفارش دادید.وقتی این کارو کنید ربات  حتی اگر دیگران عضو گروه شما نشن  و روی دکمه دریافت سکه بزنن هم بهشون سکه میده ؛ چون ادمین گروهتون نیست!\n"
         "°\n"
         "‼️توجه :\n"
         "•در صورت باز نشدن دکمه های ربات لطفاً با ارسال دستور /start ربات را استارت کنید تا ربات آپدیت بشه و دوباره دکمه های ربات برای شما باز بشه!\n"
@@ -174,6 +219,10 @@ PACKAGES = {
 }
 
 async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
         [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
@@ -187,13 +236,18 @@ async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_T
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     package_key = query.data
     user_id = str(query.from_user.id)
 
     data = await get_data()
     cost = PACKAGES[package_key]["cost"]
     if data["users"].get(user_id, 0) < cost:
-        await query.answer("موجودی شما کافی نیست!", show_alert=False)
+        await query.answer("💰موجودی شما کافی نمی باشد 🚫", show_alert=False)
         return
 
     data["states"][user_id] = {"awaiting_order": package_key}
@@ -333,11 +387,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if update.message.text == "👤 حساب کاربری":
+        if not await check_subscription(update, context):
+            await send_subscription_message(update, context)
+            return
         bal = data["users"].get(user_id, 0)
         await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
         return
 
     if update.message.text == "📦 پیگیری سفارش":
+        if not await check_subscription(update, context):
+            await send_subscription_message(update, context)
+            return
         user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
         if not user_orders:
             await update.message.reply_text("شما سفارش فعالی ندارید.")
@@ -351,6 +411,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if update.message.text == "👥️ جذب زیر مجموعه":
+        if not await check_subscription(update, context):
+            await send_subscription_message(update, context)
+            return
         await referral_menu(update, context)
         return
 
@@ -362,6 +425,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
+
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     user_id = query.from_user.id
     task_id = int(query.data.split("_")[-1])
 
@@ -384,9 +453,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=False)
         return
 
-    # اعطای پاداش
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
-    # ثبت زمان عضویت برای بررسی ترک زودهنگام
     data["completed"].setdefault(str(task_id), {})[str(user_id)] = datetime.now(timezone.utc).isoformat()
     task["claimed"] += 1
 
@@ -471,12 +538,18 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- حساب کاربری و پیگیری سفارش ----------
 
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
     user_id = str(update.effective_user.id)
     data = await get_data()
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
 async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
     user_id = str(update.effective_user.id)
     data = await get_data()
     user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
@@ -493,6 +566,9 @@ async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TY
 # ---------- سایر دستورات ----------
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
     user_id = str(update.effective_user.id)
     data = await get_data()
     bal = data["users"].get(user_id, 0)
@@ -502,6 +578,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
+app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
