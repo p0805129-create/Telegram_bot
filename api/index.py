@@ -100,7 +100,6 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # اول جواب می‌دهیم تا خطای timeout نگیریم
     user_id = str(query.from_user.id)
     data = await get_data()
 
@@ -116,6 +115,18 @@ async def daily_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_data(data)
 
     current_balance = data["users"][user_id]
+
+    # نمایش نوار وضعیت (فقط یک بار)
+    await query.answer(
+        f"💰 7 سکه کسب کردید | موجودی: {current_balance} سکه",
+        show_alert=True
+    )
+
+    # ویرایش پیام برای نمایش موجودی جدید
+    await query.edit_message_text(
+        "✅ ۷ سکه به موجودی شما اضافه شد!\n"
+        f"💰 موجودی فعلی: {current_balance} سکه"
+    )
 
     # نمایش نوار وضعیت
     await query.answer(
@@ -324,7 +335,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # اول جواب می‌دهیم
     user_id = query.from_user.id
     task_id = int(query.data.split("_")[-1])
 
