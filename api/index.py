@@ -76,7 +76,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("👥 سفارش ممبر")],
             [KeyboardButton("👤 حساب کاربری")],
             [KeyboardButton("📦 پیگیری سفارش")],
-            [KeyboardButton("👥️ جذب زیر مجموعه")]
+            [KeyboardButton("👥️ جذب زیر مجموعه")],
+            [KeyboardButton("📚 راهنما")]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
@@ -121,6 +122,45 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
     ])
     await update.message.reply_text(text, reply_markup=keyboard)
+
+# ---------- راهنما ----------
+
+async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "«🤔راهنمای ممبرگیر | ویوپلاس»\n\n"
+        "(✅لطفاً تمام متن را با دقت بخوانید✅)\n\n"
+        "ممبرگیر | ویوپلاس یک ربات برای افزایش رایگان اعضای کانال و گروه شماست!\n\n"
+        "⚠️ قبل از سفارش دادن ممبر در ربات باید ربات ما یعنی ممبرگیر | ویوپلاس را ادمین کانال یا گروه خود کنید. \n"
+        "⚠️ بعد از ادمین کردن ربات برای سفارش دادن ممبر برای کانال و گروه خود باید در ربات  سکه داشته باشید.\n"
+        "💰•برای دریافت سکه در ربات چند روش وجود دارد!👇\n\n"
+        "💰\\روش اول: \n"
+        "عضویت در سفارشات:\n"
+        "شما میتوانید با عضویت در کانال ها و گروه هایی که در کانال سفارشات سرعت ممبر وجود دارد الماس دریافت کنید. برای این کار اول باید عضو کانال ها و گروه ها شوید بعد به کانال سفارشات برگردید سپس روی دریافت الماس کلیک کنید.\n\n"
+        "👥\\روش دوم: \n"
+        "زیر مجموعه گیری :\n"
+        "برای این کار وارد بخش زیر مجموعه گیری میشید و لینک خود را برای دیگران میفرستید !\n\n"
+        "🛍️\\روش سوم: می توانید از ما سکه خریداری کنید!\n\n\n"
+        "«🔖سوال های متداول 🔖»\n\n"
+        "⁉️چطوری ربات رو ادمین کنم؟\n\n"
+        "⛔️|روش ادمین کردن ربات به این صورت است که وارد کانال یا گروه تون شوید و به قسمت ادمین ها بروید و اضافه کردن ادمین را انتخاب کنید سپس روی سرچ بزنید و ایدی ربات( @Seen_member_jet_bot ) را سرچ کنید و ربات مارا ادمین کنید!\n"
+        "●\n"
+        "⁉️ممبر هایی که از طریق ربات سرعت ممبر به کانال و گروه اضافه میشن واقعی هستن؟\n\n"
+        "بله.کاملا واقعی و ایرانی که به دلیل واقعی بودن بازدید هم دارن و اگر از کانال و گروهتون خوششون بیاد ممکنه تا همیشه بمونن و لفت ندن😊\n\n"
+        "●\n"
+        "⁉️چرا سفارشم تکمیل شده ولی تعداد ممبر دریافتیم کمتر از سفارشم هست؟!\n"
+        "(مثلا 10 ممبر سفارش دادم ولی 7 تا اومده )\n"
+        "⚠️دو دلیل داره:\n"
+        "1⃣یا اون تعداد از قبل عضو کانال یا گروه شما شده بودن اما از سفارشتون سکه گرفتن.\n"
+        "2⃣یا ربات رو ادمین گروه تون نکردید و سفارش دادید.وقتی این کارو کنید ربات  حتی اگر دیگران عضو گروه شما نشن  و روی دکمه دریافت سکه بزنن هم بهشون الماس میده ؛ چون ادمین گروهتون نیست!\n"
+        "°\n"
+        "‼️توجه :\n"
+        "•در صورت باز نشدن دکمه های ربات لطفاً با ارسال دستور /start ربات را استارت کنید تا ربات آپدیت بشه و دوباره دکمه های ربات برای شما باز بشه!\n"
+        "ربات ثبت سفارشات\n"
+        "@Seen_member_jet_bot\n"
+        "چنل سفارشات\n"
+        "@viewpluse"
+    )
+    await update.message.reply_text(help_text)
 
 # ---------- سفارش ممبر ----------
 
@@ -183,7 +223,8 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [KeyboardButton("👥 سفارش ممبر")],
             [KeyboardButton("👤 حساب کاربری")],
             [KeyboardButton("📦 پیگیری سفارش")],
-            [KeyboardButton("👥️ جذب زیر مجموعه")]
+            [KeyboardButton("👥️ جذب زیر مجموعه")],
+            [KeyboardButton("📚 راهنما")]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
@@ -311,6 +352,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.message.text == "👥️ جذب زیر مجموعه":
         await referral_menu(update, context)
+        return
+
+    if update.message.text == "📚 راهنما":
+        await help_from_menu(update, context)
         return
 
 # ---------- دریافت سکه بعد از عضویت ----------
@@ -468,6 +513,7 @@ app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), o
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥️ جذب زیر مجموعه"]), referral_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["📚 راهنما"]), help_from_menu))
 app_bot.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
