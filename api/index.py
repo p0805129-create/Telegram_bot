@@ -118,13 +118,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_text, reply_markup=keyboard)
 
 # ---------- دستور /help ----------
-# اگر کاربر عضو کانال‌های اسپانسر باشد، راهنما نمایش داده می‌شود؛ در غیر این صورت پیام عضویت ارسال می‌شود.
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-    # نمایش راهنما با فراخوانی help_from_menu
     await help_from_menu(update, context)
 
 # ---------- دستور ادمین برای افزایش سکه ----------
@@ -170,7 +167,6 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 # ---------- راهنما ----------
 
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # این تابع هم برای دکمه منو و هم برای دستور /help استفاده می‌شود
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -259,8 +255,8 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         "✅ جهت دریافت ممبر باید ابتدا ربات را ادمین کانال مورد نظر کنید سپس آیدی کانال را ارسال نمایید\n\n"
-        "👈 نمونه : viewpluse@\n"
-        "⚠️ لطفاً لینک یا نام کاربری کانال را ارسال کنید."
+        "👈 نمونه : @viewpluse یا https://t.me/viewpluse\n"
+        "⚠️ لطفاً فقط یکی از این دو فرمت را ارسال کنید."
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("انصراف", callback_data="cancel_order")]
@@ -295,7 +291,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raw_input = raw_input.split("/")[-1]
             if raw_input.startswith("+"):
                 await update.message.reply_text(
-                    "❌ برای کانال/گروه خصوصی، لطفاً آیدی عددی را ارسال کنید یا یک پیام از کانال را فوروارد کنید."
+                    "❌ لینک دعوت خصوصی قابل قبول نیست. لطفاً آیدی عمومی کانال یا گروه را به صورت @username یا https://t.me/username ارسال کنید."
                 )
                 return
             target = "@" + raw_input
@@ -304,15 +300,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target = raw_input
             invite_link = f"https://t.me/{raw_input[1:]}"
         else:
-            # فرض می‌کنیم آیدی عددی است
-            target = raw_input
-            try:
-                invite_link = await context.bot.export_chat_invite_link(chat_id=target)
-            except Exception as e:
-                await update.message.reply_text(
-                    "❌ نتوانستم لینک دعوت بسازم. مطمئن شوید ربات در کانال ادمین است و آیدی صحیح است."
-                )
-                return
+            await update.message.reply_text(
+                "❌ فرمت آیدی کانال صحیح نیست. لطفاً به صورت @username یا https://t.me/username ارسال کنید."
+            )
+            return
 
         target_channel_id = target
         cost = PACKAGES[package_key]["cost"]
@@ -358,13 +349,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=ORDER_CHANNEL_ID,
                 text=(
-                    f"📢 سفارش ممبر جدید!\n"
-                    f"👥 تعداد: {task['count']} ممبر\n"
-                    f"💰 پاداش هر عضو: {task['reward']} سکه\n"
-                    f"‼️نام کانال : {channel_title}\n"
-                    f"📝توضیحات کانال: {channel_description}\n"
-                    f"🆔 {channel_id}\n"
-                    f"➡️ ابتدا کانال را مشاهده کنید، سپس عضو شوید و بعد دکمه «دریافت سکه» را بزنید."
+                    f"‼️نام کانال : {channel_title}\n\n"
+                    f"📝توضیحات کانال: {channel_description}\n\n"
+                    f"🆔 {channel_id}"
                 ),
                 reply_markup=keyboard
             )
@@ -510,6 +497,10 @@ async def check_early_leaves():
 # ---------- جذب زیر مجموعه ----------
 
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("دریافت بنر زیر مجموعه گیری", callback_data="referral_banner")]
     ])
