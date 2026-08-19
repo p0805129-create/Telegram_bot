@@ -20,8 +20,8 @@ _initialized = False
 
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
-ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
@@ -78,7 +78,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 10   # هدیه ۱۰ سکه برای کاربر جدید
+        data["users"][user_id] = 40   # هدیه ۴۰ سکه برای کاربر جدید
     else:
         data["users"].setdefault(user_id, 0)
 
@@ -117,10 +117,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard)
 
-# ---------- دستور /help (نمایش کانال‌های اسپانسر) ----------
+# ---------- دستور /help ----------
+# اگر کاربر عضو کانال‌های اسپانسر باشد، راهنما نمایش داده می‌شود؛ در غیر این صورت پیام عضویت ارسال می‌شود.
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await send_subscription_message(update, context)
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+    # نمایش راهنما با فراخوانی help_from_menu
+    await help_from_menu(update, context)
 
 # ---------- دستور ادمین برای افزایش سکه ----------
 
@@ -153,9 +158,9 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     text = (
         "به بخش دریافت سکه رایگان خوش آمدید💫\n\n"
         "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون سکه جمع آوری کنید سپس با سکه های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
-        "👈 یک روش برای جمع آوری الماس وجود دارد:\n\n"
-        "1️⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری الماس نمایید.\n\n"
-        "🫂 همچنین از طریق زیر مجموعه گیری هم می‌تونید تا بی‌نهایت الماس رایگان کسب کنید."
+        "👈 یک روش برای جمع آوری سکه وجود دارد:\n\n"
+        "1️⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری سکه نمایید.\n\n"
+        "🫂 همچنین از طریق زیر مجموعه گیری هم می‌تونید تا بی‌نهایت سکه رایگان کسب کنید."
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
@@ -165,8 +170,7 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 # ---------- راهنما ----------
 
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # این دکمه از منوی اصلی است، نیازی به بررسی اسپانسر ندارد ولی می‌توان گذاشت
-    # چون در منو اصلی است، احتمالاً کاربر قبلاً بررسی شده است. ولی برای امنیت می‌گذاریم.
+    # این تابع هم برای دکمه منو و هم برای دستور /help استفاده می‌شود
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -333,11 +337,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["next_task_id"] += 1
         await set_data(data)
 
-        # تلاش برای گرفتن نام کانال
-        channel_display = target_channel_id
+        # تلاش برای گرفتن نام کانال، توضیحات و آیدی
+        channel_title = target_channel_id
+        channel_description = ""
+        channel_id = target_channel_id
         try:
             chat_info = await context.bot.get_chat(chat_id=target_channel_id)
-            channel_display = chat_info.title or chat_info.username or target_channel_id
+            channel_title = chat_info.title or chat_info.username or target_channel_id
+            channel_description = getattr(chat_info, 'description', '') or ""
+            channel_id = target_channel_id  # یا chat_info.id
         except:
             pass
 
@@ -353,7 +361,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"📢 سفارش ممبر جدید!\n"
                     f"👥 تعداد: {task['count']} ممبر\n"
                     f"💰 پاداش هر عضو: {task['reward']} سکه\n"
-                    f"📌 کانال: {channel_display}\n"
+                    f"‼️نام کانال : {channel_title}\n"
+                    f"📝توضیحات کانال: {channel_description}\n"
+                    f"🆔 {channel_id}\n"
                     f"➡️ ابتدا کانال را مشاهده کنید، سپس عضو شوید و بعد دکمه «دریافت سکه» را بزنید."
                 ),
                 reply_markup=keyboard
