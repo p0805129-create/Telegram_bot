@@ -21,9 +21,9 @@ _initialized = False
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
-ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها (ویرایش شد)
+ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
@@ -313,7 +313,11 @@ async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("👥️ 100 ممبر | 150 🪙", callback_data="member_100")],
         [InlineKeyboardButton("👥️ 500 ممبر | 700 🪙", callback_data="member_500")],
     ])
-    await update.message.reply_text("پکیج مورد نظر را انتخاب کنید:", reply_markup=keyboard)
+    await update.message.reply_text(
+        "پکیج مورد نظر را انتخاب کنید:\n"
+        "مطمئن شوید ربات را ادمین کانال یا گروهتون کردید ‼️",
+        reply_markup=keyboard
+    )
 
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
