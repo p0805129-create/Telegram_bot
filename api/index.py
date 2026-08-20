@@ -20,8 +20,8 @@ _initialized = False
 
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
-ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
@@ -33,7 +33,8 @@ async def get_data():
         "completed": {},        # {task_id: {user_id: timestamp}}
         "next_task_id": 1,
         "states": {},
-        "daily_claims": {}
+        "daily_claims": {},
+        "usernames": {}         # نگهداری نام کاربری برای پشتیبانی از /give با یوزرنیم
     }
     if raw:
         data = json.loads(raw)
@@ -82,6 +83,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         data["users"].setdefault(user_id, 0)
 
+    # ذخیره نام کاربری (اگر موجود باشد)
+    if update.effective_user.username:
+        data["usernames"][update.effective_user.username.lower()] = user_id
+
     # پردازش لینک ریفرال
     if context.args and len(context.args) > 0:
         arg = context.args[0]
@@ -125,24 +130,48 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await help_from_menu(update, context)
 
 # ---------- دستور ادمین برای افزایش سکه ----------
+# پشتیبانی از /give @username amount یا /give user_id amount
 
 async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
+
     try:
         parts = update.message.text.split()
         if len(parts) != 3:
-            await update.message.reply_text("فرمت صحیح: /give <user_id> <amount>")
+            await update.message.reply_text("فرمت صحیح: /give <یوزرنیم یا آیدی عددی> <مقدار>")
             return
-        target_id = int(parts[1])
+
+        target = parts[1]
         amount = int(parts[2])
+
         data = await get_data()
-        data["users"][str(target_id)] = data["users"].get(str(target_id), 0) + amount
+
+        # اگر با @ شروع شود، یوزرنیم است
+        if target.startswith("@"):
+            username = target[1:].lower()
+            user_id = data.get("usernames", {}).get(username)
+            if not user_id:
+                await update.message.reply_text(
+                    "❌ کاربر با این یوزرنیم پیدا نشد. مطمئن شوید کاربر ربات را استارت کرده باشد."
+                )
+                return
+        else:
+            # فرض می‌کنیم آیدی عددی است
+            user_id = str(target)
+
+        if user_id not in data["users"]:
+            data["users"][user_id] = 0
+
+        data["users"][user_id] += amount
         await set_data(data)
-        await update.message.reply_text(f"✅ {amount} سکه به کاربر {target_id} داده شد.")
+
+        await update.message.reply_text(f"✅ {amount} سکه به کاربر {target} داده شد.")
     except ValueError:
-        await update.message.reply_text("لطفاً اعداد صحیح وارد کنید.")
+        await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
+    except Exception as e:
+        await update.message.reply_text(f"خطا: {e}")
 
 # ---------- دریافت سکه رایگان ----------
 
