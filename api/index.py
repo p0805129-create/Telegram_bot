@@ -20,8 +20,9 @@ _initialized = False
 
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
-ORDER_CHANNEL_ID = "@Membergir_ViewPlus"   # آیدی یا نام کاربری کانال سفارش‌ها
-CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
+ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
+CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
@@ -103,6 +104,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             [KeyboardButton("💰 دریافت سکه رایگان")],
             [KeyboardButton("👥 سفارش ممبر")],
+            [KeyboardButton("🛍️ فروشگاه")],
             [KeyboardButton("👤 حساب کاربری")],
             [KeyboardButton("📦 پیگیری سفارش")],
             [KeyboardButton("👥️ جذب زیر مجموعه")],
@@ -172,6 +174,56 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
     except Exception as e:
         await update.message.reply_text(f"خطا: {e}")
+
+# ---------- فروشگاه ----------
+
+async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
+    text = (
+        "🛍 به فروشگاه ربات ویو پلاس خوش آمدید💰\n"
+        "لطفا گزینه ی مورد نظر را جهت خرید انتخاب کنید 👇"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("سکه 🪙", callback_data="shop_coins")],
+        [InlineKeyboardButton("اسپانسر", callback_data="shop_sponsor")]
+    ])
+    await update.message.reply_text(text, reply_markup=keyboard)
+
+async def shop_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    text = (
+        "خرید سکه 💰\n\n"
+        "100 سکه => 15 هزار تومن\n"
+        "250 سکه => 30 هزار تومن\n"
+        "500 سکه => 45 هزار تومن\n"
+        "1000 سکه => 65 هزار تومن\n"
+        "4000 سکه => 260 هزار تومن\n\n"
+        "جهت خرید سکه و کارت به کارت یا مشاوره و سوال به ایدی زیر پیام دهید\n"
+        f"🆔️{ADMIN_USERNAME}"
+    )
+    await query.edit_message_text(text)
+
+async def shop_sponsor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    text = (
+        "فروش جوین ربات فعال شد🎉\n\n"
+        "👥️ | تعرفه جوین اجباری 💫\n\n"
+        "📣 ربات ویو پلاس\n"
+        "🔤:: @Seen_member_jet_bot\n\n"
+        " 24 ساعت  | 79,000  تومان  💰\n"
+        " 48 ساعت  | 129,000 تومان 💰\n"
+        " 72 ساعت  | 179,000 تومان 💰\n\n"
+        "جهت ارتباط با ما⬇️\n"
+        f"🔤:: {ADMIN_USERNAME}"
+    )
+    await query.edit_message_text(text)
 
 # ---------- دریافت سکه رایگان ----------
 
@@ -404,6 +456,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await order_member_from_menu(update, context)
         return
 
+    if update.message.text == "🛍️ فروشگاه":
+        await shop_from_menu(update, context)
+        return
+
     if update.message.text == "👤 حساب کاربری":
         if not await check_subscription(update, context):
             await send_subscription_message(update, context)
@@ -607,8 +663,11 @@ app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
 app_bot.add_handler(CallbackQueryHandler(claim_member, pattern="^claim_member_"))
+app_bot.add_handler(CallbackQueryHandler(shop_coins, pattern="^shop_coins$"))
+app_bot.add_handler(CallbackQueryHandler(shop_sponsor, pattern="^shop_sponsor$"))
 app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥️ جذب زیر مجموعه"]), referral_menu))
