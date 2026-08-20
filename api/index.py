@@ -22,7 +22,7 @@ _initialized = False
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
 ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها
-ORDER_CHANNEL_URL = "https://t.m/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
+ORDER_CHANNEL_URL = "https://t.me/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
 CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
@@ -36,7 +36,8 @@ async def get_data():
         "next_task_id": 1,
         "states": {},
         "daily_claims": {},
-        "usernames": {}         # نگهداری نام کاربری برای پشتیبانی از /give با یوزرنیم
+        "usernames": {},        # نگهداری نام کاربری برای پشتیبانی از /give با یوزرنیم
+        "join_records": []      # لیست عضویت‌های انجام‌شده برای بررسی ترک زودهنگام
     }
     if raw:
         data = json.loads(raw)
@@ -539,6 +540,15 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["completed"].setdefault(str(task_id), {})[str(user_id)] = datetime.now(timezone.utc).isoformat()
     task["claimed"] += 1
 
+    # ثبت عضویت برای بررسی ترک زودهنگام
+    data["join_records"].append({
+        "user_id": str(user_id),
+        "task_id": task_id,
+        "target_id": task["target_id"],
+        "owner_id": task["owner_id"],
+        "joined_at": datetime.now(timezone.utc).isoformat()
+    })
+
     if task["claimed"] >= task["count"]:
         data["tasks"].remove(task)
         await set_data(data)
@@ -562,27 +572,38 @@ async def check_early_leaves():
     now = datetime.now(timezone.utc)
     penalized = False
 
-    for task in data["tasks"]:
-        task_id = str(task["id"])
-        if task_id not in data["completed"]:
-            continue
-        completed_users = data["completed"][task_id]
-        for user_id, joined_at_str in list(completed_users.items()):
-            joined_at = datetime.fromisoformat(joined_at_str)
-            age = now - joined_at
-            if age < timedelta(days=4):
-                try:
-                    member = await app_bot.bot.get_chat_member(chat_id=task["target_id"], user_id=int(user_id))
-                    if member.status not in ["member", "administrator", "creator"]:
-                        # کاربر عضو نیست → جریمه
-                        data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
-                        owner_id = str(task["owner_id"])
-                        data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
-                        del completed_users[user_id]
-                        penalized = True
-                except Exception as e:
-                    pass
+    remaining_records = []
+    for record in data["join_records"]:
+        joined_at = datetime.fromisoformat(record["joined_at"])
+        age = now - joined_at
 
+        # اگر بیشتر از ۴ روز گذشته باشد، دیگر نیازی به بررسی نیست
+        if age >= timedelta(days=4):
+            continue
+
+        try:
+            member = await app_bot.bot.get_chat_member(
+                chat_id=record["target_id"],
+                user_id=int(record["user_id"])
+            )
+            if member.status not in ["member", "administrator", "creator"]:
+                # کاربر عضو نیست → جریمه
+                user_id = record["user_id"]
+                owner_id = str(record["owner_id"])
+
+                data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
+                data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
+
+                penalized = True
+                # این رکورد دیگر لازم نیست
+            else:
+                # کاربر هنوز عضو است؛ رکورد را نگه می‌داریم
+                remaining_records.append(record)
+        except Exception as e:
+            # اگر خطایی رخ داد، رکورد را نگه می‌داریم
+            remaining_records.append(record)
+
+    data["join_records"] = remaining_records
     if penalized:
         await set_data(data)
     return penalized
