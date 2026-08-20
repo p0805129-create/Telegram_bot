@@ -21,7 +21,8 @@ _initialized = False
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
-ORDER_CHANNEL_ID = "@viewpluse"   # آیدی یا نام کاربری کانال سفارش‌ها
+ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها (ویرایش شد)
+ORDER_CHANNEL_URL = "https://t.me/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
 CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
@@ -439,11 +440,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
 
+        # ارسال پیام تأیید به کاربر با دکمه مشاهده سفارش
+        confirmation_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("مشاهده ی سفارش", url=ORDER_CHANNEL_URL)]
+        ])
         await update.message.reply_text(
             f"✅ سفارش شما ثبت شد.\n"
             f"تعداد: {task['count']} ممبر\n"
             f"هزینه: {cost} سکه\n"
-            f"پس از تکمیل اعضا، سفارش از کانال حذف خواهد شد."
+            f"پس از تکمیل اعضا، سفارش از کانال حذف خواهد شد.",
+            reply_markup=confirmation_keyboard
         )
         return
 
