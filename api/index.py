@@ -240,6 +240,7 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
         "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون سکه جمع آوری کنید سپس با سکه های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
         "👈 یک روش برای جمع آوری سکه وجود دارد:\n\n"
         "1️⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری سکه نمایید.\n\n"
+        "‼️اگر کمتر از 4روز از کانال ها لفت بدید 3 سکه از شما کسر میشود \n\n"
         "🫂 همچنین از طریق زیر مجموعه گیری هم می‌تونید تا بی‌نهایت سکه رایگان کسب کنید."
     )
     keyboard = InlineKeyboardMarkup([
@@ -593,6 +594,15 @@ async def check_early_leaves():
 
                 data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
                 data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
+
+                # ارسال پیام به کاربر خاطی
+                try:
+                    await app_bot.bot.send_message(
+                        chat_id=int(user_id),
+                        text="به دلیل ترک کانال کمتر از 4روز 3سکه از شما کسر شد"
+                    )
+                except Exception:
+                    pass
 
                 penalized = True
                 # این رکورد دیگر لازم نیست
