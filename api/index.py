@@ -499,12 +499,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-
-    if not await check_subscription(update, context):
-        await send_subscription_message(update, context)
-        return
-
     user_id = query.from_user.id
     task_id = int(query.data.split("_")[-1])
 
@@ -516,6 +510,10 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if str(user_id) in data["completed"].get(str(task_id), {}):
         await query.answer("شما قبلاً سکه را دریافت کرده‌اید", show_alert=False)
+        return
+
+    if not await check_subscription(update, context):
+        await query.answer("ابتدا در کانال‌های اسپانسر عضو شوید.", show_alert=False)
         return
 
     try:
