@@ -294,6 +294,7 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------- سفارش ممبر ----------
 
 PACKAGES = {
+    "member_5": {"count": 5, "cost": 10, "reward": 2},
     "member_10": {"count": 10, "cost": 20, "reward": 2},
     "member_20": {"count": 20, "cost": 40, "reward": 2},
     "member_50": {"count": 50, "cost": 80, "reward": 2},
@@ -308,6 +309,7 @@ async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥️ 5 ممبر | 10 🪙", callback_data="member_5")],
         [InlineKeyboardButton("👥️ 10 ممبر | 20 🪙", callback_data="member_10")],
         [InlineKeyboardButton("👥️ 20 ممبر | 40 🪙", callback_data="member_20")],
         [InlineKeyboardButton("👥️ 50 ممبر | 80 🪙", callback_data="member_50")],
