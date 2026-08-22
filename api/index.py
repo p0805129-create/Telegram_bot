@@ -23,7 +23,7 @@ ADMIN_ID = 7724653657                   # آیدی عددی ادمین
 ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
 ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
-CHANNEL_USERNAME = "Membergir_ViewPlus"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
