@@ -19,25 +19,25 @@ DATA_KEY = "bot_data"
 _initialized = False
 
 # ----- تنظیمات ثابت -----
-ADMIN_ID = 7724653657                   # آیدی عددی ادمین
-ADMIN_USERNAME = "@Whitee800"           # یوزرنیم ادمین برای بخش خرید و پشتیبانی
-ORDER_CHANNEL_ID = "@viewpluse"         # آیدی یا نام کاربری کانال سفارش‌ها
-ORDER_CHANNEL_URL = "https://t.me/viewpluse"  # لینک کانال برای دکمه مشاهده سفارش
-CHANNEL_USERNAME = "viewpluse"    # نام کاربری کانال برای دکمه عضویت (بدون @)
+ADMIN_ID = 7724653657
+ADMIN_USERNAME = "@Whitee800"
+ORDER_CHANNEL_ID = "@viewpluse"
+ORDER_CHANNEL_URL = "https://t.me/viewpluse"
+CHANNEL_USERNAME = "viewpluse"
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
 
 async def get_data():
     raw = await redis.get(DATA_KEY)
     defaults = {
-        "users": {"7724653657": 10000},   # موجودی اولیه ادمین
+        "users": {"7724653657": 10000},
         "tasks": [],
-        "completed": {},        # {task_id: {user_id: timestamp}}
+        "completed": {},        # {task_id: {user_id: timestamp}} (برای جلوگیری از دوبار کلیک روی همان تسک)
         "next_task_id": 1,
         "states": {},
         "daily_claims": {},
-        "usernames": {},        # نگهداری نام کاربری برای پشتیبانی از /give با یوزرنیم
-        "join_records": []      # لیست عضویت‌های انجام‌شده برای بررسی ترک زودهنگام
+        "usernames": {},
+        "join_records": []      # لیست عضویت‌ها: {user_id, task_id, target_id, owner_id, joined_at}
     }
     if raw:
         data = json.loads(raw)
@@ -60,7 +60,7 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
             member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
                 return False
-        except Exception as e:
+        except Exception:
             return False
     return True
 
@@ -82,20 +82,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 40   # هدیه ۴۰ سکه برای کاربر جدید
+        data["users"][user_id] = 40
     else:
         data["users"].setdefault(user_id, 0)
 
-    # ذخیره نام کاربری (اگر موجود باشد)
     if update.effective_user.username:
         data["usernames"][update.effective_user.username.lower()] = user_id
 
-    # پردازش لینک ریفرال
     if context.args and len(context.args) > 0:
         arg = context.args[0]
-        if arg.startswith("ref_"):
+        if arg.startswith("ref_") and is_new:
             ref = arg[4:]
-            if ref.isdigit() and is_new:
+            if ref.isdigit():
                 referrer_id = int(ref)
                 if referrer_id != int(user_id):
                     data["users"][str(referrer_id)] = data["users"].get(str(referrer_id), 0) + 15
@@ -134,8 +132,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await help_from_menu(update, context)
 
 # ---------- دستور ادمین برای افزایش سکه ----------
-# پشتیبانی از /give @username amount یا /give user_id amount
-
 async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
@@ -152,17 +148,13 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data = await get_data()
 
-        # اگر با @ شروع شود، یوزرنیم است
         if target.startswith("@"):
             username = target[1:].lower()
             user_id = data.get("usernames", {}).get(username)
             if not user_id:
-                await update.message.reply_text(
-                    "❌ کاربر با این یوزرنیم پیدا نشد. مطمئن شوید کاربر ربات را استارت کرده باشد."
-                )
+                await update.message.reply_text("❌ کاربر با این یوزرنیم پیدا نشد. مطمئن شوید کاربر ربات را استارت کرده باشد.")
                 return
         else:
-            # فرض می‌کنیم آیدی عددی است
             user_id = str(target)
 
         if user_id not in data["users"]:
@@ -170,7 +162,6 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data["users"][user_id] += amount
         await set_data(data)
-
         await update.message.reply_text(f"✅ {amount} سکه به کاربر {target} داده شد.")
     except ValueError:
         await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
@@ -178,7 +169,6 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"خطا: {e}")
 
 # ---------- فروشگاه ----------
-
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
@@ -197,7 +187,6 @@ async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def shop_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     text = (
         "خرید سکه 💰\n\n"
         "100 سکه => 15 هزار تومن\n"
@@ -213,7 +202,6 @@ async def shop_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def shop_sponsor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     text = (
         "فروش جوین ربات فعال شد🎉\n\n"
         "👥️ | تعرفه جوین اجباری 💫\n\n"
@@ -228,9 +216,7 @@ async def shop_sponsor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text)
 
 # ---------- دریافت سکه رایگان ----------
-
 async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # بررسی عضویت
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -249,7 +235,6 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text(text, reply_markup=keyboard)
 
 # ---------- راهنما ----------
-
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
@@ -292,7 +277,6 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text)
 
 # ---------- سفارش ممبر ----------
-
 PACKAGES = {
     "member_5": {"count": 5, "cost": 10, "reward": 2},
     "member_10": {"count": 10, "cost": 20, "reward": 2},
@@ -361,7 +345,6 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["states"].pop(user_id, None)
     await set_data(data)
 
-    # حذف پیام حاوی دکمه‌های شیشه‌ای
     try:
         await query.delete_message()
     except:
@@ -376,13 +359,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         package_key = state.pop("awaiting_order")
         raw_input = update.message.text.strip()
 
-        # پردازش لینک یا نام کاربری
         if raw_input.startswith("https://t.me/"):
             raw_input = raw_input.split("/")[-1]
             if raw_input.startswith("+"):
-                await update.message.reply_text(
-                    "❌ لینک دعوت خصوصی قابل قبول نیست. لطفاً آیدی عمومی کانال یا گروه را به صورت @username یا https://t.me/username ارسال کنید."
-                )
+                await update.message.reply_text("❌ لینک دعوت خصوصی قابل قبول نیست. لطفاً آیدی عمومی کانال یا گروه را به صورت @username یا https://t.me/username ارسال کنید.")
                 return
             target = "@" + raw_input
             invite_link = f"https://t.me/{raw_input}"
@@ -390,28 +370,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target = raw_input
             invite_link = f"https://t.me/{raw_input[1:]}"
         else:
-            await update.message.reply_text(
-                "❌ فرمت آیدی کانال صحیح نیست. لطفاً به صورت @username یا https://t.me/username ارسال کنید."
-            )
+            await update.message.reply_text("❌ فرمت آیدی کانال صحیح نیست. لطفاً به صورت @username یا https://t.me/username ارسال کنید.")
             return
 
         target_channel_id = target
         cost = PACKAGES[package_key]["cost"]
 
-        # === بررسی ادمین بودن ربات در کانال/گروه هدف ===
+        # بررسی ادمین بودن ربات
         bot_id = (await context.bot.get_me()).id
         try:
             bot_member = await context.bot.get_chat_member(chat_id=target_channel_id, user_id=bot_id)
             if bot_member.status not in ["administrator", "creator"]:
-                await update.message.reply_text(
-                    "🚫کاربر گرامی جهت ثبت سفارش ابتدا ربات را ادمین کانال یا کروه خود کنید و دوباره سفارش خود را ثبت کنید"
-                )
+                await update.message.reply_text("🚫کاربر گرامی جهت ثبت سفارش ابتدا ربات را ادمین کانال یا کروه خود کنید و دوباره سفارش خود را ثبت کنید")
                 return
-        except Exception as e:
-            # اگر نتوانستیم بررسی کنیم، خطا می‌دهیم
-            await update.message.reply_text(
-                "🚫جهت ثبت سفارش، ربات باید در کانال/گروه ادمین باشد. لطفاً ادمین بودن ربات را بررسی کنید و دوباره تلاش کنید."
-            )
+        except Exception:
+            await update.message.reply_text("🚫جهت ثبت سفارش، ربات باید در کانال/گروه ادمین باشد. لطفاً ادمین بودن ربات را بررسی کنید و دوباره تلاش کنید.")
             return
 
         if data["users"].get(user_id, 0) < cost:
@@ -435,7 +408,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["next_task_id"] += 1
         await set_data(data)
 
-        # تلاش برای گرفتن نام کانال، توضیحات و آیدی
         channel_title = target_channel_id
         channel_description = ""
         channel_id = target_channel_id
@@ -443,7 +415,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_info = await context.bot.get_chat(chat_id=target_channel_id)
             channel_title = chat_info.title or chat_info.username or target_channel_id
             channel_description = getattr(chat_info, 'description', '') or ""
-            channel_id = target_channel_id  # یا chat_info.id
+            channel_id = target_channel_id
         except:
             pass
 
@@ -465,7 +437,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
 
-        # ارسال پیام تأیید به کاربر با دکمه مشاهده سفارش
         confirmation_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("مشاهده ی سفارش", url=ORDER_CHANNEL_URL)]
         ])
@@ -482,15 +453,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "💰 دریافت سکه رایگان":
         await free_coins_from_menu(update, context)
         return
-
     if update.message.text == "👥 سفارش ممبر":
         await order_member_from_menu(update, context)
         return
-
     if update.message.text == "🛍️ فروشگاه":
         await shop_from_menu(update, context)
         return
-
     if update.message.text == "👤 حساب کاربری":
         if not await check_subscription(update, context):
             await send_subscription_message(update, context)
@@ -498,7 +466,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bal = data["users"].get(user_id, 0)
         await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
         return
-
     if update.message.text == "📦 پیگیری سفارش":
         if not await check_subscription(update, context):
             await send_subscription_message(update, context)
@@ -514,20 +481,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ تعداد ممبر دریافتی: {order['claimed']}"
             )
         return
-
     if update.message.text == "👥️ جذب زیر مجموعه":
         if not await check_subscription(update, context):
             await send_subscription_message(update, context)
             return
         await referral_menu(update, context)
         return
-
     if update.message.text == "📚 راهنما":
         await help_from_menu(update, context)
         return
 
 # ---------- دریافت سکه بعد از عضویت ----------
-
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -539,6 +503,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
+    # جلوگیری از کلیک دوباره روی همان تسک
     if str(user_id) in data["completed"].get(str(task_id), {}):
         await query.answer("شما قبلاً سکه را دریافت کرده‌اید", show_alert=False)
         return
@@ -547,26 +512,35 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("ابتدا در کانال‌های اسپانسر عضو شوید.", show_alert=False)
         return
 
+    # بررسی اینکه آیا کاربر طی ۴ روز گذشته از همین کانال سکه گرفته است؟
+    now = datetime.now(timezone.utc)
+    for record in data["join_records"]:
+        if record["user_id"] == str(user_id) and record["target_id"] == task["target_id"]:
+            joined_at = datetime.fromisoformat(record["joined_at"])
+            if (now - joined_at) < timedelta(days=4):
+                await query.answer("شما قبلاً از این کانال سکه گرفته‌اید. تا ۴ روز دیگر نمی‌توانید دوباره دریافت کنید.", show_alert=False)
+                return
+
     try:
         member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=user_id)
         if member.status not in ["member", "administrator", "creator"]:
             await query.answer("شما عضو کانال نیستید!", show_alert=False)
             return
-    except Exception as e:
+    except Exception:
         await query.answer("خطا در بررسی عضویت. مطمئن شوید ربات در کانال ادمین است.", show_alert=False)
         return
 
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
-    data["completed"].setdefault(str(task_id), {})[str(user_id)] = datetime.now(timezone.utc).isoformat()
+    data["completed"].setdefault(str(task_id), {})[str(user_id)] = now.isoformat()
     task["claimed"] += 1
 
-    # ثبت عضویت برای بررسی ترک زودهنگام
+    # ثبت رکورد عضویت برای بررسی ترک زودهنگام و محدودیت ۴ روزه
     data["join_records"].append({
         "user_id": str(user_id),
         "task_id": task_id,
         "target_id": task["target_id"],
         "owner_id": task["owner_id"],
-        "joined_at": datetime.now(timezone.utc).isoformat()
+        "joined_at": now.isoformat()
     })
 
     if task["claimed"] >= task["count"]:
@@ -586,7 +560,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ---------- بررسی ترک زودهنگام ----------
-
 async def check_early_leaves():
     data = await get_data()
     now = datetime.now(timezone.utc)
@@ -597,7 +570,6 @@ async def check_early_leaves():
         joined_at = datetime.fromisoformat(record["joined_at"])
         age = now - joined_at
 
-        # اگر بیشتر از ۴ روز گذشته باشد، دیگر نیازی به بررسی نیست
         if age >= timedelta(days=4):
             continue
 
@@ -607,29 +579,24 @@ async def check_early_leaves():
                 user_id=int(record["user_id"])
             )
             if member.status not in ["member", "administrator", "creator"]:
-                # کاربر عضو نیست → جریمه
                 user_id = record["user_id"]
                 owner_id = str(record["owner_id"])
 
                 data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
                 data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
 
-                # ارسال پیام به کاربر خاطی
                 try:
                     await app_bot.bot.send_message(
                         chat_id=int(user_id),
                         text="به دلیل ترک کانال کمتر از 4روز 3سکه از شما کسر شد"
                     )
-                except Exception:
+                except:
                     pass
 
                 penalized = True
-                # این رکورد دیگر لازم نیست
             else:
-                # کاربر هنوز عضو است؛ رکورد را نگه می‌داریم
                 remaining_records.append(record)
-        except Exception as e:
-            # اگر خطایی رخ داد، رکورد را نگه می‌داریم
+        except:
             remaining_records.append(record)
 
     data["join_records"] = remaining_records
@@ -638,7 +605,6 @@ async def check_early_leaves():
     return penalized
 
 # ---------- جذب زیر مجموعه ----------
-
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
@@ -672,7 +638,6 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text)
 
 # ---------- حساب کاربری و پیگیری سفارش ----------
-
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
@@ -700,7 +665,6 @@ async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 # ---------- سایر دستورات ----------
-
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
@@ -711,7 +675,6 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
 # ---------- راه‌اندازی اپلیکیشن ----------
-
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
@@ -738,7 +701,6 @@ app_bot.add_handler(
 )
 
 # ---------- FastAPI ----------
-
 app = FastAPI()
 
 @app.get("/")
