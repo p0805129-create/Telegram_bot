@@ -1,9 +1,11 @@
 import os
 import json
+import random
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import ReplyKeyboardMarkup, KeyboardButton
+from telegram import ReactionTypeEmoji
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from upstash_redis.asyncio import Redis
 
@@ -25,6 +27,7 @@ ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
 CHANNEL_USERNAME = "viewpluse"
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
+REACTION_EMOJIS = ["💘", "😎", "💯", "❤️‍🔥", "🎉", "🔥", "👍", "❤️", "🏆", "👀"]
 # ---------------------------------------------------
 
 async def get_data():
@@ -32,12 +35,12 @@ async def get_data():
     defaults = {
         "users": {"7724653657": 10000},
         "tasks": [],
-        "completed": {},        # {task_id: {user_id: timestamp}} (برای جلوگیری از دوبار کلیک روی همان تسک)
+        "completed": {},
         "next_task_id": 1,
         "states": {},
         "daily_claims": {},
         "usernames": {},
-        "join_records": []      # لیست عضویت‌ها: {user_id, task_id, target_id, owner_id, joined_at}
+        "join_records": []
     }
     if raw:
         data = json.loads(raw)
@@ -419,13 +422,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+        # -------- کیبورد جدید --------
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("مشاهده کانال", url=invite_link)],
-            [InlineKeyboardButton("عضویت", url=invite_link)],
-            [InlineKeyboardButton("دریافت سکه", callback_data=f"claim_member_{task['id']}")]
+            [InlineKeyboardButton("🪩 سفارش جدید عضویت 🪩", callback_data="noop")],
+            [
+                InlineKeyboardButton("✅️ عضویت", url=invite_link),
+                InlineKeyboardButton("💰 دریافت سکه", callback_data=f"claim_member_{task['id']}")
+            ],
+            [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")]
         ])
+        # --------------------------------------------
+
         try:
-            await context.bot.send_message(
+            sent_message = await context.bot.send_message(
                 chat_id=ORDER_CHANNEL_ID,
                 text=(
                     f"‼️نام کانال : {channel_title}\n\n"
@@ -434,6 +443,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_markup=keyboard
             )
+
+            # افزودن ری‌اکشن‌های تصادفی (۵ عدد از لیست)
+            try:
+                selected_reactions = random.sample(REACTION_EMOJIS, 5)
+                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in selected_reactions]
+                await context.bot.set_message_reaction(
+                    chat_id=ORDER_CHANNEL_ID,
+                    message_id=sent_message.message_id,
+                    reaction=reaction_objects
+                )
+            except Exception as e:
+                pass
+
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
 
@@ -503,7 +525,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
-    # جلوگیری از کلیک دوباره روی همان تسک
     if str(user_id) in data["completed"].get(str(task_id), {}):
         await query.answer("شما قبلاً سکه را دریافت کرده‌اید", show_alert=False)
         return
@@ -512,7 +533,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("ابتدا در کانال‌های اسپانسر عضو شوید.", show_alert=False)
         return
 
-    # بررسی اینکه آیا کاربر طی ۴ روز گذشته از همین کانال سکه گرفته است؟
+    # بررسی محدودیت ۴ روزه برای همان کانال
     now = datetime.now(timezone.utc)
     for record in data["join_records"]:
         if record["user_id"] == str(user_id) and record["target_id"] == task["target_id"]:
@@ -534,7 +555,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data["completed"].setdefault(str(task_id), {})[str(user_id)] = now.isoformat()
     task["claimed"] += 1
 
-    # ثبت رکورد عضویت برای بررسی ترک زودهنگام و محدودیت ۴ روزه
     data["join_records"].append({
         "user_id": str(user_id),
         "task_id": task_id,
@@ -674,6 +694,11 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
+# ---------- هندلر دکمه noop ----------
+async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
 # ---------- راه‌اندازی اپلیکیشن ----------
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
@@ -686,6 +711,7 @@ app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_ban
 app_bot.add_handler(CallbackQueryHandler(claim_member, pattern="^claim_member_"))
 app_bot.add_handler(CallbackQueryHandler(shop_coins, pattern="^shop_coins$"))
 app_bot.add_handler(CallbackQueryHandler(shop_sponsor, pattern="^shop_sponsor$"))
+app_bot.add_handler(CallbackQueryHandler(noop, pattern="^noop$"))
 app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
