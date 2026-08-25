@@ -444,9 +444,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
 
-            # افزودن ری‌اکشن‌های تصادفی (۳ عدد از لیست)
+            # افزودن ری‌اکشن‌های تصادفی (۲ عدد از لیست)
             try:
-                selected_reactions = random.sample(REACTION_EMOJIS, 3)
+                selected_reactions = random.sample(REACTION_EMOJIS, 2)
                 reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in selected_reactions]
                 await sent_message.set_reaction(reaction_objects)
             except Exception as e:
