@@ -444,9 +444,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
 
-            # افزودن ری‌اکشن‌ها (همه‌ی ایموجی‌ها)
+            # افزودن ری‌اکشن‌های تصادفی (۵ عدد از لیست)
             try:
-                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in REACTION_EMOJIS]
+                selected_reactions = random.sample(REACTION_EMOJIS, 5)
+                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in selected_reactions]
                 await sent_message.set_reaction(reaction_objects)
             except Exception as e:
                 print(f"REACTION_ERROR: {e}")
@@ -694,19 +695,8 @@ async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-async def test_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    sent_message = await context.bot.send_message(chat_id=ORDER_CHANNEL_ID, text="تست ری‌اکشن")
-    try:
-        reaction_objects = [ReactionTypeEmoji(emoji="👍")]
-        await sent_message.set_reaction(reaction_objects)
-        await update.message.reply_text("ری‌اکشن ارسال شد")
-    except Exception as e:
-        await update.message.reply_text(f"خطا: {e}")
 # ---------- راه‌اندازی اپلیکیشن ----------
 app_bot = Application.builder().token(TOKEN).build()
-app_bot.add_handler(CommandHandler("testreact", test_reaction))
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
