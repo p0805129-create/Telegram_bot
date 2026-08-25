@@ -444,10 +444,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
 
-            # افزودن ری‌اکشن‌های تصادفی (۵ عدد از لیست)
+            # افزودن ری‌اکشن‌ها به صورت کامل (همه‌ی ایموجی‌های لیست، بدون انتخاب تصادفی)
             try:
-                selected_reactions = random.sample(REACTION_EMOJIS, 5)
-                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in selected_reactions]
+                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in REACTION_EMOJIS]
                 await context.bot.set_message_reaction(
                     chat_id=ORDER_CHANNEL_ID,
                     message_id=sent_message.message_id,
