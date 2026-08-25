@@ -444,10 +444,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
 
-            # افزودن ری‌اکشن‌های تصادفی (۲ عدد از لیست)
+            # افزودن یک ری‌اکشن تصادفی (فقط یک ایموجی، چون ربات غیرپریمیوم است)
             try:
-                selected_reactions = random.sample(REACTION_EMOJIS, 2)
-                reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in selected_reactions]
+                selected_emoji = random.choice(REACTION_EMOJIS)
+                reaction_objects = [ReactionTypeEmoji(emoji=selected_emoji)]
                 await sent_message.set_reaction(reaction_objects)
             except Exception as e:
                 print(f"REACTION_ERROR: {e}")
