@@ -444,16 +444,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=keyboard
             )
 
-            # افزودن ری‌اکشن‌ها به صورت کامل (همه‌ی ایموجی‌های لیست، بدون انتخاب تصادفی)
+            # افزودن ری‌اکشن‌ها (همه‌ی ایموجی‌ها)
             try:
                 reaction_objects = [ReactionTypeEmoji(emoji=emoji) for emoji in REACTION_EMOJIS]
-                await context.bot.set_message_reaction(
-                    chat_id=ORDER_CHANNEL_ID,
-                    message_id=sent_message.message_id,
-                    reaction=reaction_objects
-                )
+                await sent_message.set_reaction(reaction_objects)
             except Exception as e:
-                print(f"Reaction error: {e}")
+                print(f"REACTION_ERROR: {e}")
 
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
