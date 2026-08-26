@@ -104,7 +104,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             [KeyboardButton("💰 دریافت سکه رایگان")],
             [KeyboardButton("👥 سفارش ممبر")],
-            [KeyboardButton("📋 سفارش‌ها")],
             [KeyboardButton("🛍️ فروشگاه")],
             [KeyboardButton("👤 حساب کاربری")],
             [KeyboardButton("📦 پیگیری سفارش")],
@@ -168,32 +167,6 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
     except Exception as e:
         await update.message.reply_text(f"خطا: {e}")
-
-# ---------- نمایش سفارش‌ها ----------
-async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context):
-        await send_subscription_message(update, context)
-        return
-
-    user_id = update.effective_user.id
-    data = await get_data()
-    available = [t for t in data["tasks"] if t["owner_id"] != user_id]
-    if not available:
-        await update.message.reply_text("فعلاً سفارشی برای انجام وجود ندارد.")
-        return
-
-    for task in available:
-        text = f"📦 سفارش #{task['id']}\n"
-        text += f"👥 تعداد: {task['count']} ممبر\n"
-        text += f"💰 پاداش هر عضو: {task['reward']} سکه\n"
-        text += f"🔗 لینک کانال: {task['target_link']}\n"
-        text += f"👤 آیدی کانال: {task['target_id']}"
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅️ عضویت", url=task["target_link"])],
-            [InlineKeyboardButton("💰 دریافت سکه", callback_data=f"claim_member_{task['id']}")]
-        ])
-        await update.message.reply_text(text, reply_markup=keyboard)
 
 # ---------- فروشگاه ----------
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -487,9 +460,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.text == "👥 سفارش ممبر":
         await order_member_from_menu(update, context)
         return
-    if update.message.text == "📋 سفارش‌ها":
-        await tasks_list(update, context)
-        return
     if update.message.text == "🛍️ فروشگاه":
         await shop_from_menu(update, context)
         return
@@ -717,7 +687,6 @@ app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
-app_bot.add_handler(CommandHandler("tasks", tasks_list))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
@@ -727,7 +696,6 @@ app_bot.add_handler(CallbackQueryHandler(shop_sponsor, pattern="^shop_sponsor$")
 app_bot.add_handler(CallbackQueryHandler(noop, pattern="^noop$"))
 app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
-app_bot.add_handler(MessageHandler(filters.Text(["📋 سفارش‌ها"]), tasks_list))
 app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_from_menu))
