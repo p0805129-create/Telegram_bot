@@ -85,7 +85,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 40
+        data["users"][user_id] = 10
     else:
         data["users"].setdefault(user_id, 0)
 
