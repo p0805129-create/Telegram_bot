@@ -1,11 +1,9 @@
 import os
 import json
-import random
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import ReplyKeyboardMarkup, KeyboardButton
-from telegram import ReactionTypeEmoji
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from upstash_redis.asyncio import Redis
 
@@ -27,7 +25,6 @@ ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
 CHANNEL_USERNAME = "viewpluse"
 SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
-REACTION_EMOJIS = ["💘", "😎", "💯", "❤️‍🔥", "🎉", "🔥", "👍", "❤️", "🏆", "👀"]
 # ---------------------------------------------------
 
 async def get_data():
@@ -85,7 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 10
+        data["users"][user_id] = 10   # هدیه ۱۰ سکه برای کاربر جدید
     else:
         data["users"].setdefault(user_id, 0)
 
@@ -107,6 +104,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             [KeyboardButton("💰 دریافت سکه رایگان")],
             [KeyboardButton("👥 سفارش ممبر")],
+            [KeyboardButton("📋 سفارش‌ها")],
             [KeyboardButton("🛍️ فروشگاه")],
             [KeyboardButton("👤 حساب کاربری")],
             [KeyboardButton("📦 پیگیری سفارش")],
@@ -170,6 +168,32 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
     except Exception as e:
         await update.message.reply_text(f"خطا: {e}")
+
+# ---------- نمایش سفارش‌ها ----------
+async def tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
+    user_id = update.effective_user.id
+    data = await get_data()
+    available = [t for t in data["tasks"] if t["owner_id"] != user_id]
+    if not available:
+        await update.message.reply_text("فعلاً سفارشی برای انجام وجود ندارد.")
+        return
+
+    for task in available:
+        text = f"📦 سفارش #{task['id']}\n"
+        text += f"👥 تعداد: {task['count']} ممبر\n"
+        text += f"💰 پاداش هر عضو: {task['reward']} سکه\n"
+        text += f"🔗 لینک کانال: {task['target_link']}\n"
+        text += f"👤 آیدی کانال: {task['target_id']}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅️ عضویت", url=task["target_link"])],
+            [InlineKeyboardButton("💰 دریافت سکه", callback_data=f"claim_member_{task['id']}")]
+        ])
+        await update.message.reply_text(text, reply_markup=keyboard)
 
 # ---------- فروشگاه ----------
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -422,7 +446,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-        # -------- کیبورد جدید --------
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🪩 سفارش جدید عضویت 🪩", callback_data="noop")],
             [
@@ -431,10 +454,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")]
         ])
-        # --------------------------------------------
 
         try:
-            sent_message = await context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=ORDER_CHANNEL_ID,
                 text=(
                     f"‼️نام کانال : {channel_title}\n\n"
@@ -443,15 +465,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_markup=keyboard
             )
-
-            # افزودن یک ری‌اکشن تصادفی (فقط یک ایموجی، چون ربات غیرپریمیوم است)
-            try:
-                selected_emoji = random.choice(REACTION_EMOJIS)
-                reaction_objects = [ReactionTypeEmoji(emoji=selected_emoji)]
-                await sent_message.set_reaction(reaction_objects)
-            except Exception as e:
-                print(f"REACTION_ERROR: {e}")
-
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
 
@@ -473,6 +486,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if update.message.text == "👥 سفارش ممبر":
         await order_member_from_menu(update, context)
+        return
+    if update.message.text == "📋 سفارش‌ها":
+        await tasks_list(update, context)
         return
     if update.message.text == "🛍️ فروشگاه":
         await shop_from_menu(update, context)
@@ -701,6 +717,7 @@ app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
+app_bot.add_handler(CommandHandler("tasks", tasks_list))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
@@ -710,6 +727,7 @@ app_bot.add_handler(CallbackQueryHandler(shop_sponsor, pattern="^shop_sponsor$")
 app_bot.add_handler(CallbackQueryHandler(noop, pattern="^noop$"))
 app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["📋 سفارش‌ها"]), tasks_list))
 app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_from_menu))
