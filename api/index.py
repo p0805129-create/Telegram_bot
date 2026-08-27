@@ -429,7 +429,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         try:
-            await context.bot.send_message(
+            sent_message = await context.bot.send_message(
                 chat_id=ORDER_CHANNEL_ID,
                 text=(
                     f"‼️نام کانال : {channel_title}\n\n"
@@ -438,6 +438,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_markup=keyboard
             )
+            # ذخیره message_id برای حذف بعداً
+            task["message_id"] = sent_message.message_id
+            await set_data(data)
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
 
@@ -548,9 +551,21 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if task["claimed"] >= task["count"]:
         data["tasks"].remove(task)
         await set_data(data)
+
+        # حذف پیام سفارش از کانال
+        if "message_id" in task:
+            try:
+                await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
+            except Exception:
+                pass
+
+        # ارسال پیام خصوصی به صاحب سفارش
         try:
-            await query.edit_message_text("✅ سفارش تکمیل شد و حذف گردید.")
-        except:
+            await context.bot.send_message(
+                chat_id=task["owner_id"],
+                text=f"سفارش شما برای {task['target_id']} با کد {task['id']} به پایان رسیده"
+            )
+        except Exception:
             pass
     else:
         await set_data(data)
