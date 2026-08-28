@@ -20,7 +20,7 @@ _initialized = False
 
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657
-ADMIN_USERNAME = "@Whitee800"
+ADMIN_USERNAME = "@Dorinamm"  # تغییر یافت
 ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
 CHANNEL_USERNAME = "viewpluse"
@@ -276,6 +276,66 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
+# ---------- پیگیری سفارش (منوی جدید) ----------
+async def track_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔍 پیگیری سفارشات 🔍", callback_data="track_orders"),
+            InlineKeyboardButton("‼️ قوانین ‼️", callback_data="show_rules")
+        ]
+    ])
+    await update.message.reply_text("👈 گزینه ی مورد نظر را انتخاب کنید", reply_markup=keyboard)
+
+async def track_orders_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not await check_subscription(update, context):
+        await send_subscription_message(update, context)
+        return
+
+    user_id = str(query.from_user.id)
+    data = await get_data()
+    user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
+    if not user_orders:
+        await query.edit_message_text("شما سفارش فعالی ندارید.")
+        return
+
+    text = "📋 لیست سفارش‌های شما:\n\n"
+    for order in user_orders:
+        text += (
+            f"📦 سفارش #{order['id']}\n"
+            f"👥 تعداد کاربر درخواستی: {order['count']}\n"
+            f"✅ تعداد ممبر دریافتی: {order['claimed']}\n"
+            f"📌 آیدی کانال: {order['target_id']}\n\n"
+        )
+    await query.edit_message_text(text)
+
+async def rules_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    rules_text = (
+        "⛔️ کانال شما نباید شامل موارد زیر باشد:\n"
+        "1️⃣ - خلاف قوانین جمهوری اسلامی ایران\n"
+        "2️⃣ - فحاشی و توهین\n"
+        "3️⃣ - محتوای جنسی و بزرگسالان\n"
+        "4️⃣ - مزاحمت و پخش اطلاعات افراد\n"
+        "5️⃣ - کلاهبرداری و پخش موارد جعلی\n"
+        "6️⃣ - سایتها و رباتها و کانالهای شرط بندی\n"
+        "7️⃣ - تبلیغ ربات های مشابه، ربات های غیرواقعی\n"
+        "8️⃣ - فریب افراد و کاربران\n"
+        "9️⃣ - هک و نفوذ، پخش برنامه های پولی و موارد علیه کپی رایت\n"
+        "🔟 - و ... (موارد غیرمجاز)\n\n"
+        "⚠️ توجه داشته باشید در صورتی که کانال شما شامل موارد بالا بود سفارش آن لغو و حساب فرد خاطی مسدود میگردد‼️\n\n"
+        "⚠️ قوانین و مقررات دائما در حال به روز شدن می باشند و کلیه کاربران موظف به مطالعه این صفحه به صورت مکرر می باشند."
+    )
+    await query.edit_message_text(rules_text)
+
 # ---------- سفارش ممبر ----------
 PACKAGES = {
     "member_5": {"count": 5, "cost": 10, "reward": 2},
@@ -330,7 +390,8 @@ async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "✅ جهت دریافت ممبر باید ابتدا ربات را ادمین کانال مورد نظر کنید سپس آیدی کانال را ارسال نمایید\n\n"
         "👈 نمونه : @viewpluse یا https://t.me/viewpluse\n"
-        "⚠️ لطفاً فقط یکی از این دو فرمت را ارسال کنید."
+        "⚠️ لطفاً فقط یکی از این دو فرمت را ارسال کنید.\n"
+        "‼️ ربات باید تا پایان سفارش ادمین کانال شما بماند."
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("انصراف", callback_data="cancel_order")]
@@ -425,7 +486,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("✅️ عضویت", url=invite_link),
                 InlineKeyboardButton("💰 دریافت سکه", callback_data=f"claim_member_{task['id']}")
             ],
-            [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")]
+            [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")],
+            [InlineKeyboardButton("🚫 تخلف", callback_data=f"report_task_{task['id']}")]  # دکمه جدید
         ])
 
         try:
@@ -438,7 +500,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ),
                 reply_markup=keyboard
             )
-            # ذخیره message_id برای حذف بعداً
             task["message_id"] = sent_message.message_id
             await set_data(data)
         except Exception as e:
@@ -474,19 +535,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
         return
     if update.message.text == "📦 پیگیری سفارش":
-        if not await check_subscription(update, context):
-            await send_subscription_message(update, context)
-            return
-        user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
-        if not user_orders:
-            await update.message.reply_text("شما سفارش فعالی ندارید.")
-            return
-        for order in user_orders:
-            await update.message.reply_text(
-                f"📦 سفارش #{order['id']}\n"
-                f"👥 تعداد کاربر درخواستی: {order['count']}\n"
-                f"✅ تعداد ممبر دریافتی: {order['claimed']}"
-            )
+        await track_order_menu(update, context)
         return
     if update.message.text == "👥️ جذب زیر مجموعه":
         if not await check_subscription(update, context):
@@ -498,6 +547,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await help_from_menu(update, context)
         return
 
+# ---------- گزارش تخلف ----------
+async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    task_id = int(query.data.split("_")[-1])
+    data = await get_data()
+    task = next((t for t in data["tasks"] if t["id"] == task_id), None)
+    if not task:
+        await query.answer("سفارش یافت نشد.", show_alert=False)
+        return
+
+    # ارسال گزارش به ادمین
+    report_text = (
+        "🚨 گزارش تخلف سفارش\n\n"
+        f"📦 کد سفارش: {task['id']}\n"
+        f"👤 صاحب سفارش: {task['owner_id']}\n"
+        f"📌 آیدی کانال: {task['target_id']}\n"
+        f"🔗 لینک کانال: {task['target_link']}\n"
+        f"👥 تعداد درخواستی: {task['count']}\n"
+        f"✅ تعداد دریافتی: {task['claimed']}"
+    )
+
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=report_text)
+        await query.answer("گزارش تخلف شما ثبت شد.", show_alert=False)
+    except Exception as e:
+        await query.answer("خطا در ارسال گزارش به ادمین.", show_alert=False)
+
 # ---------- دریافت سکه بعد از عضویت ----------
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -508,6 +586,41 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
+        return
+
+    # بررسی ادمین بودن ربات در کانال هدف
+    bot_id = (await context.bot.get_me()).id
+    try:
+        bot_member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=bot_id)
+        bot_is_admin = bot_member.status in ["administrator", "creator"]
+    except Exception:
+        bot_is_admin = False
+
+    if not bot_is_admin:
+        # حذف سفارش
+        data["tasks"].remove(task)
+        await set_data(data)
+
+        # حذف پیام از کانال سفارش‌ها
+        if "message_id" in task:
+            try:
+                await context.bot.delete_message(
+                    chat_id=ORDER_CHANNEL_ID,
+                    message_id=task["message_id"]
+                )
+            except:
+                pass
+
+        # اطلاع به صاحب سفارش
+        try:
+            await context.bot.send_message(
+                chat_id=task["owner_id"],
+                text="سفارش شما به دلیل ادمین نبودن ربات حذف شد"
+            )
+        except:
+            pass
+
+        await query.answer("ربات در کانال ادمین نیست، سفارش حذف شد.", show_alert=False)
         return
 
     if str(user_id) in data["completed"].get(str(task_id), {}):
@@ -555,8 +668,11 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # حذف پیام سفارش از کانال
         if "message_id" in task:
             try:
-                await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
-            except Exception:
+                await context.bot.delete_message(
+                    chat_id=ORDER_CHANNEL_ID,
+                    message_id=task["message_id"]
+                )
+            except:
                 pass
 
         # ارسال پیام خصوصی به صاحب سفارش
@@ -565,7 +681,7 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=task["owner_id"],
                 text=f"سفارش شما برای {task['target_id']} با کد {task['id']} به پایان رسیده"
             )
-        except Exception:
+        except:
             pass
     else:
         await set_data(data)
@@ -664,23 +780,6 @@ async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
-async def track_order_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_subscription(update, context):
-        await send_subscription_message(update, context)
-        return
-    user_id = str(update.effective_user.id)
-    data = await get_data()
-    user_orders = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
-    if not user_orders:
-        await update.message.reply_text("شما سفارش فعالی ندارید.")
-        return
-    for order in user_orders:
-        await update.message.reply_text(
-            f"📦 سفارش #{order['id']}\n"
-            f"👥 تعداد کاربر درخواستی: {order['count']}\n"
-            f"✅ تعداد ممبر دریافتی: {order['claimed']}"
-        )
-
 # ---------- سایر دستورات ----------
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_subscription(update, context):
@@ -709,11 +808,14 @@ app_bot.add_handler(CallbackQueryHandler(claim_member, pattern="^claim_member_")
 app_bot.add_handler(CallbackQueryHandler(shop_coins, pattern="^shop_coins$"))
 app_bot.add_handler(CallbackQueryHandler(shop_sponsor, pattern="^shop_sponsor$"))
 app_bot.add_handler(CallbackQueryHandler(noop, pattern="^noop$"))
+app_bot.add_handler(CallbackQueryHandler(track_orders_callback, pattern="^track_orders$"))
+app_bot.add_handler(CallbackQueryHandler(rules_callback, pattern="^show_rules$"))
+app_bot.add_handler(CallbackQueryHandler(report_task, pattern="^report_task_"))
 app_bot.add_handler(MessageHandler(filters.Text(["💰 دریافت سکه رایگان"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
-app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥️ جذب زیر مجموعه"]), referral_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📚 راهنما"]), help_from_menu))
 app_bot.add_handler(
