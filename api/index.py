@@ -20,7 +20,7 @@ _initialized = False
 
 # ----- تنظیمات ثابت -----
 ADMIN_ID = 7724653657
-ADMIN_USERNAME = "@Dorinamm"  # تغییر یافت
+ADMIN_USERNAME = "@Dorinamm"
 ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
 CHANNEL_USERNAME = "viewpluse"
@@ -77,12 +77,15 @@ async def send_subscription_message(update: Update, context: ContextTypes.DEFAUL
 # ---------- منوی اصلی ----------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+
     user_id = str(update.effective_user.id)
     data = await get_data()
 
     is_new = user_id not in data["users"]
     if is_new:
-        data["users"][user_id] = 10   # هدیه ۱۰ سکه برای کاربر جدید
+        data["users"][user_id] = 10
     else:
         data["users"].setdefault(user_id, 0)
 
@@ -126,6 +129,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- دستور /help ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -133,6 +138,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- دستور ادمین برای افزایش سکه ----------
 async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
@@ -170,6 +177,8 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- فروشگاه ----------
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -217,6 +226,8 @@ async def shop_sponsor(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- دریافت سکه رایگان ----------
 async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -236,6 +247,8 @@ async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------- راهنما ----------
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -278,6 +291,8 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- پیگیری سفارش (منوی جدید) ----------
 async def track_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -293,10 +308,6 @@ async def track_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def track_orders_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    if not await check_subscription(update, context):
-        await send_subscription_message(update, context)
-        return
 
     user_id = str(query.from_user.id)
     data = await get_data()
@@ -348,6 +359,8 @@ PACKAGES = {
 }
 
 async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -412,6 +425,9 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+
     user_id = str(update.effective_user.id)
     data = await get_data()
     state = data["states"].get(user_id, {})
@@ -487,7 +503,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("💰 دریافت سکه", callback_data=f"claim_member_{task['id']}")
             ],
             [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")],
-            [InlineKeyboardButton("🚫 تخلف", callback_data=f"report_task_{task['id']}")]  # دکمه جدید
+            [InlineKeyboardButton("🚫 تخلف", callback_data=f"report_task_{task['id']}")]
         ])
 
         try:
@@ -559,7 +575,6 @@ async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("سفارش یافت نشد.", show_alert=False)
         return
 
-    # ارسال گزارش به ادمین
     report_text = (
         "🚨 گزارش تخلف سفارش\n\n"
         f"📦 کد سفارش: {task['id']}\n"
@@ -573,7 +588,7 @@ async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await context.bot.send_message(chat_id=ADMIN_ID, text=report_text)
         await query.answer("گزارش تخلف شما ثبت شد.", show_alert=False)
-    except Exception as e:
+    except Exception:
         await query.answer("خطا در ارسال گزارش به ادمین.", show_alert=False)
 
 # ---------- دریافت سکه بعد از عضویت ----------
@@ -585,6 +600,11 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
+        # حذف پیام ناخواسته از کانال
+        try:
+            await query.message.delete()
+        except:
+            pass
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
@@ -597,26 +617,17 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot_is_admin = False
 
     if not bot_is_admin:
-        # حذف سفارش
         data["tasks"].remove(task)
         await set_data(data)
 
-        # حذف پیام از کانال سفارش‌ها
         if "message_id" in task:
             try:
-                await context.bot.delete_message(
-                    chat_id=ORDER_CHANNEL_ID,
-                    message_id=task["message_id"]
-                )
+                await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
             except:
                 pass
 
-        # اطلاع به صاحب سفارش
         try:
-            await context.bot.send_message(
-                chat_id=task["owner_id"],
-                text="سفارش شما به دلیل ادمین نبودن ربات حذف شد"
-            )
+            await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما به دلیل ادمین نبودن ربات حذف شد")
         except:
             pass
 
@@ -631,7 +642,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("ابتدا در کانال‌های اسپانسر عضو شوید.", show_alert=False)
         return
 
-    # بررسی محدودیت ۴ روزه برای همان کانال
     now = datetime.now(timezone.utc)
     for record in data["join_records"]:
         if record["user_id"] == str(user_id) and record["target_id"] == task["target_id"]:
@@ -665,17 +675,12 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["tasks"].remove(task)
         await set_data(data)
 
-        # حذف پیام سفارش از کانال
         if "message_id" in task:
             try:
-                await context.bot.delete_message(
-                    chat_id=ORDER_CHANNEL_ID,
-                    message_id=task["message_id"]
-                )
+                await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
             except:
                 pass
 
-        # ارسال پیام خصوصی به صاحب سفارش
         try:
             await context.bot.send_message(
                 chat_id=task["owner_id"],
@@ -739,6 +744,8 @@ async def check_early_leaves():
 
 # ---------- جذب زیر مجموعه ----------
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -772,6 +779,8 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- حساب کاربری و پیگیری سفارش ----------
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
@@ -782,6 +791,8 @@ async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- سایر دستورات ----------
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
