@@ -15,6 +15,7 @@ redis = Redis(
 )
 
 DATA_KEY = "bot_data"
+SPONSORS_KEY = "sponsor_channels"
 
 _initialized = False
 
@@ -23,9 +24,23 @@ ADMIN_ID = 7724653657
 ADMIN_USERNAME = "@Dorinamm"
 ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
-CHANNEL_USERNAME = "viewpluse"
-SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
+CHANNEL_USERNAME = "Membergir_ViewPlus"
+DEFAULT_SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
 # ---------------------------------------------------
+
+async def get_sponsor_channels():
+    """لیست اسپانسرها را از Redis می‌خواند؛ اگر تنظیم نشده بود، از مقدار پیش‌فرض استفاده می‌کند."""
+    raw = await redis.get(SPONSORS_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            return DEFAULT_SPONSOR_CHANNELS
+    return DEFAULT_SPONSOR_CHANNELS
+
+async def set_sponsor_channels(channels):
+    """لیست اسپانسرها را در Redis ذخیره می‌کند."""
+    await redis.set(SPONSORS_KEY, json.dumps(channels))
 
 async def get_data():
     raw = await redis.get(DATA_KEY)
@@ -54,8 +69,11 @@ async def set_data(data):
 # ---------- بررسی عضویت در کانال‌های اسپانسر ----------
 
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    sponsors = await get_sponsor_channels()
+    if not sponsors:
+        return True  # اگر لیست خالی بود، جویین اجباری غیرفعال است
     user_id = update.effective_user.id
-    for channel in SPONSOR_CHANNELS:
+    for channel in sponsors:
         try:
             member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
             if member.status not in ["member", "administrator", "creator"]:
@@ -65,13 +83,69 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return True
 
 async def send_subscription_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sponsors = await get_sponsor_channels()
+    if not sponsors:
+        return
     text = (
         "❗️لطفا برای ادامه کار با ربات و حمایت کردن از ما عضو گروه و کانال های زیر شوید👇\n\n"
-        + "\n".join([f"🆔 {ch}" for ch in SPONSOR_CHANNELS])
+        + "\n".join([f"🆔 {ch}" for ch in sponsors])
         + "\n\n💎اسپانسر ها:\n"
-        + "\n".join([f"🪅{i+1} {ch}" for i, ch in enumerate(SPONSOR_CHANNELS)])
+        + "\n".join([f"🪅{i+1} {ch}" for i, ch in enumerate(sponsors)])
         + "\n\n❗️پس از عضو شدن برای ربات دستور /start را ارسال کنید✓"
     )
+    await update.message.reply_text(text)
+
+# ---------- دستور ادمین برای تغییر اسپانسرها ----------
+async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
+        return
+
+    args = context.args
+    if not args:
+        # نمایش لیست فعلی
+        sponsors = await get_sponsor_channels()
+        if not sponsors:
+            await update.message.reply_text("لیست اسپانسرها خالی است (جویین اجباری غیرفعال).\n\nبرای افزودن: /sponsors @ch1,@ch2")
+        else:
+            text = "📋 لیست اسپانسرهای فعلی:\n\n" + "\n".join([f"🆔 {ch}" for ch in sponsors])
+            text += "\n\nبرای تغییر: /sponsors @ch1,@ch2,@ch3\nبرای حذف همه: /sponsors clear\nبرای بازگشت به پیش‌فرض: /sponsors reset"
+            await update.message.reply_text(text)
+        return
+
+    arg = args[0].strip().lower()
+
+    if arg == "clear":
+        await set_sponsor_channels([])
+        await update.message.reply_text("✅ همه اسپانسرها حذف شدند. جویین اجباری غیرفعال شد.")
+        return
+
+    if arg == "reset":
+        await set_sponsor_channels(DEFAULT_SPONSOR_CHANNELS)
+        text = "✅ بازگشت به اسپانسرهای پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
+        await update.message.reply_text(text)
+        return
+
+    # آرگومان به‌صورت @ch1,@ch2,@ch3 یا از پیام بعدی
+    raw_channels = args[0]
+    channels = [c.strip() for c in raw_channels.split(",") if c.strip()]
+    if not channels:
+        await update.message.reply_text("❌ فرمت صحیح: /sponsors @ch1,@ch2,@ch3")
+        return
+
+    # اعتبارسنجی ساده: هر کانال باید با @ شروع بشه یا آیدی عددی باشه
+    for ch in channels:
+        if not (ch.startswith("@") or ch.startswith("-") or ch.lstrip("-").isdigit()):
+            await update.message.reply_text(
+                f"❌ فرمت آیدی «{ch}» صحیح نیست.\nباید با @ شروع شود یا آیدی عددی باشد."
+            )
+            return
+
+    await set_sponsor_channels(channels)
+    text = "✅ اسپانسرها به‌روزرسانی شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
+    text += "\n\n⚠️ مطمئن شوید ربات در همه این کانال‌ها ادمین است."
     await update.message.reply_text(text)
 
 # ---------- منوی اصلی ----------
@@ -453,7 +527,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_channel_id = target
         cost = PACKAGES[package_key]["cost"]
 
-        # بررسی ادمین بودن ربات
         bot_id = (await context.bot.get_me()).id
         try:
             bot_member = await context.bot.get_chat_member(chat_id=target_channel_id, user_id=bot_id)
@@ -533,7 +606,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # دکمه‌های منوی پایین
     if update.message.text == "💰 دریافت سکه رایگان":
         await free_coins_from_menu(update, context)
         return
@@ -600,7 +672,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
-        # حذف پیام ناخواسته از کانال
         try:
             await query.message.delete()
         except:
@@ -608,7 +679,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
 
-    # بررسی ادمین بودن ربات در کانال هدف
     bot_id = (await context.bot.get_me()).id
     try:
         bot_member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=bot_id)
@@ -777,7 +847,7 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text)
 
-# ---------- حساب کاربری و پیگیری سفارش ----------
+# ---------- حساب کاربری ----------
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -789,7 +859,6 @@ async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
-# ---------- سایر دستورات ----------
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -812,6 +881,7 @@ app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
+app_bot.add_handler(CommandHandler("sponsors", sponsors_command))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
