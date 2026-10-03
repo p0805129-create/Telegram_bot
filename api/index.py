@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -29,7 +30,6 @@ DEFAULT_SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS"
 # ---------------------------------------------------
 
 async def get_sponsor_channels():
-    """لیست اسپانسرها را از Redis می‌خواند؛ اگر تنظیم نشده بود، از مقدار پیش‌فرض استفاده می‌کند."""
     raw = await redis.get(SPONSORS_KEY)
     if raw:
         try:
@@ -39,7 +39,6 @@ async def get_sponsor_channels():
     return DEFAULT_SPONSOR_CHANNELS
 
 async def set_sponsor_channels(channels):
-    """لیست اسپانسرها را در Redis ذخیره می‌کند."""
     await redis.set(SPONSORS_KEY, json.dumps(channels))
 
 async def get_data():
@@ -71,7 +70,7 @@ async def set_data(data):
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     sponsors = await get_sponsor_channels()
     if not sponsors:
-        return True  # اگر لیست خالی بود، جویین اجباری غیرفعال است
+        return True
     user_id = update.effective_user.id
     for channel in sponsors:
         try:
@@ -95,7 +94,7 @@ async def send_subscription_message(update: Update, context: ContextTypes.DEFAUL
     )
     await update.message.reply_text(text)
 
-# ---------- دستور ادمین برای تغییر اسپانسرها ----------
+# ---------- دستور ادمین: تغییر اسپانسرها ----------
 async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -105,48 +104,101 @@ async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args:
-        # نمایش لیست فعلی
         sponsors = await get_sponsor_channels()
         if not sponsors:
-            await update.message.reply_text("لیست اسپانسرها خالی است (جویین اجباری غیرفعال).\n\nبرای افزودن: /sponsors @ch1,@ch2")
+            await update.message.reply_text("لیست اسپانسرها خالی است.\n\nبرای افزودن: /sponsors @ch1,@ch2")
         else:
             text = "📋 لیست اسپانسرهای فعلی:\n\n" + "\n".join([f"🆔 {ch}" for ch in sponsors])
-            text += "\n\nبرای تغییر: /sponsors @ch1,@ch2,@ch3\nبرای حذف همه: /sponsors clear\nبرای بازگشت به پیش‌فرض: /sponsors reset"
+            text += "\n\n/sponsors @ch1,@ch2 → تغییر\n/sponsors clear → حذف همه\n/sponsors reset → بازگشت به پیش‌فرض"
             await update.message.reply_text(text)
         return
 
     arg = args[0].strip().lower()
-
     if arg == "clear":
         await set_sponsor_channels([])
-        await update.message.reply_text("✅ همه اسپانسرها حذف شدند. جویین اجباری غیرفعال شد.")
+        await update.message.reply_text("✅ همه اسپانسرها حذف شدند.")
         return
-
     if arg == "reset":
         await set_sponsor_channels(DEFAULT_SPONSOR_CHANNELS)
-        text = "✅ بازگشت به اسپانسرهای پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
+        text = "✅ بازگشت به پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
         await update.message.reply_text(text)
         return
 
-    # آرگومان به‌صورت @ch1,@ch2,@ch3 یا از پیام بعدی
     raw_channels = args[0]
     channels = [c.strip() for c in raw_channels.split(",") if c.strip()]
     if not channels:
-        await update.message.reply_text("❌ فرمت صحیح: /sponsors @ch1,@ch2,@ch3")
+        await update.message.reply_text("❌ فرمت: /sponsors @ch1,@ch2,@ch3")
         return
-
-    # اعتبارسنجی ساده: هر کانال باید با @ شروع بشه یا آیدی عددی باشه
     for ch in channels:
         if not (ch.startswith("@") or ch.startswith("-") or ch.lstrip("-").isdigit()):
-            await update.message.reply_text(
-                f"❌ فرمت آیدی «{ch}» صحیح نیست.\nباید با @ شروع شود یا آیدی عددی باشد."
-            )
+            await update.message.reply_text(f"❌ آیدی «{ch}» معتبر نیست.")
             return
-
     await set_sponsor_channels(channels)
-    text = "✅ اسپانسرها به‌روزرسانی شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
-    text += "\n\n⚠️ مطمئن شوید ربات در همه این کانال‌ها ادمین است."
+    text = "✅ اسپانسرها به‌روز شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
     await update.message.reply_text(text)
+
+# ---------- دستور ادمین: پیام همگانی ----------
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
+        return
+
+    # حالت ۱: متن مستقیم بعد از دستور
+    broadcast_text = None
+    if context.args:
+        broadcast_text = " ".join(context.args)
+
+    # حالت ۲: ریپلای روی یک پیام
+    reply_message = update.message.reply_to_message
+
+    if not broadcast_text and not reply_message:
+        await update.message.reply_text(
+            "❌ برای ارسال پیام همگانی یکی از این روش‌ها را استفاده کنید:\n\n"
+            "1️⃣ /broadcast متن پیام\n"
+            "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید (برای فوروارد عکس/ویدیو/فایل)"
+        )
+        return
+
+    data = await get_data()
+    user_ids = list(data["users"].keys())
+
+    status_msg = await update.message.reply_text(
+        f"⏳ در حال ارسال به {len(user_ids)} کاربر..."
+    )
+
+    success = 0
+    failed = 0
+
+    for uid in user_ids:
+        try:
+            target_id = int(uid)
+        except ValueError:
+            continue
+
+        try:
+            if reply_message:
+                # فوروارد پیام ریپلای‌شده
+                await context.bot.copy_message(
+                    chat_id=target_id,
+                    from_chat_id=reply_message.chat_id,
+                    message_id=reply_message.message_id
+                )
+            else:
+                await context.bot.send_message(chat_id=target_id, text=broadcast_text)
+            success += 1
+        except Exception:
+            failed += 1
+
+        # مکث کوتاه برای جلوگیری از محدودیت تلگرام
+        await asyncio.sleep(0.05)
+
+    await status_msg.edit_text(
+        f"✅ ارسال پیام همگانی تمام شد.\n\n"
+        f"📤 موفق: {success}\n"
+        f"❌ ناموفق: {failed}"
+    )
 
 # ---------- منوی اصلی ----------
 
@@ -201,7 +253,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard)
 
-# ---------- دستور /help ----------
+# ---------- /help ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -210,7 +262,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await help_from_menu(update, context)
 
-# ---------- دستور ادمین برای افزایش سکه ----------
+# ---------- دستور ادمین: افزایش سکه ----------
 async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -233,7 +285,7 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username = target[1:].lower()
             user_id = data.get("usernames", {}).get(username)
             if not user_id:
-                await update.message.reply_text("❌ کاربر با این یوزرنیم پیدا نشد. مطمئن شوید کاربر ربات را استارت کرده باشد.")
+                await update.message.reply_text("❌ کاربر با این یوزرنیم پیدا نشد.")
                 return
         else:
             user_id = str(target)
@@ -245,7 +297,7 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_data(data)
         await update.message.reply_text(f"✅ {amount} سکه به کاربر {target} داده شد.")
     except ValueError:
-        await update.message.reply_text("لطفاً مقدار سکه را به صورت عدد صحیح وارد کنید.")
+        await update.message.reply_text("لطفاً مقدار سکه را عدد صحیح وارد کنید.")
     except Exception as e:
         await update.message.reply_text(f"خطا: {e}")
 
@@ -363,7 +415,7 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
-# ---------- پیگیری سفارش (منوی جدید) ----------
+# ---------- پیگیری سفارش ----------
 async def track_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -663,7 +715,7 @@ async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await query.answer("خطا در ارسال گزارش به ادمین.", show_alert=False)
 
-# ---------- دریافت سکه بعد از عضویت ----------
+# ---------- دریافت سکه ----------
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -870,18 +922,19 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💰 موجودی شما: {bal} سکه")
 
-# ---------- هندلر دکمه noop ----------
+# ---------- noop ----------
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-# ---------- راه‌اندازی اپلیکیشن ----------
+# ---------- راه‌اندازی ----------
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
 app_bot.add_handler(CommandHandler("give", give_coins))
 app_bot.add_handler(CommandHandler("balance", balance))
 app_bot.add_handler(CommandHandler("sponsors", sponsors_command))
+app_bot.add_handler(CommandHandler("broadcast", broadcast_command))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
