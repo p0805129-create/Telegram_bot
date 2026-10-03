@@ -145,28 +145,36 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
 
-    # حالت ۱: متن مستقیم بعد از دستور
     broadcast_text = None
     if context.args:
         broadcast_text = " ".join(context.args)
 
-    # حالت ۲: ریپلای روی یک پیام
     reply_message = update.message.reply_to_message
 
     if not broadcast_text and not reply_message:
         await update.message.reply_text(
             "❌ برای ارسال پیام همگانی یکی از این روش‌ها را استفاده کنید:\n\n"
             "1️⃣ /broadcast متن پیام\n"
-            "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید (برای فوروارد عکس/ویدیو/فایل)"
+            "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید"
         )
         return
 
+    # پیام اولیه به ادمین
+    await update.message.reply_text("⏳ ارسال پیام همگانی در حال انجام است... نتیجه را بعداً برایتان می‌فرستیم.")
+
+    # اجرای ارسال در پس‌زمینه
+    asyncio.create_task(
+        run_broadcast(
+            bot=context.bot,
+            admin_chat_id=update.effective_chat.id,
+            broadcast_text=broadcast_text,
+            reply_message=reply_message
+        )
+    )
+
+async def run_broadcast(bot, admin_chat_id, broadcast_text, reply_message):
     data = await get_data()
     user_ids = list(data["users"].keys())
-
-    status_msg = await update.message.reply_text(
-        f"⏳ در حال ارسال به {len(user_ids)} کاربر..."
-    )
 
     success = 0
     failed = 0
@@ -179,26 +187,30 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             if reply_message:
-                # فوروارد پیام ریپلای‌شده
-                await context.bot.copy_message(
+                await bot.copy_message(
                     chat_id=target_id,
                     from_chat_id=reply_message.chat_id,
                     message_id=reply_message.message_id
                 )
             else:
-                await context.bot.send_message(chat_id=target_id, text=broadcast_text)
+                await bot.send_message(chat_id=target_id, text=broadcast_text)
             success += 1
         except Exception:
             failed += 1
 
-        # مکث کوتاه برای جلوگیری از محدودیت تلگرام
         await asyncio.sleep(0.05)
 
-    await status_msg.edit_text(
-        f"✅ ارسال پیام همگانی تمام شد.\n\n"
-        f"📤 موفق: {success}\n"
-        f"❌ ناموفق: {failed}"
-    )
+    try:
+        await bot.send_message(
+            chat_id=admin_chat_id,
+            text=(
+                f"✅ ارسال پیام همگانی تمام شد.\n\n"
+                f"📤 موفق: {success}\n"
+                f"❌ ناموفق: {failed}"
+            )
+        )
+    except Exception:
+        pass
 
 # ---------- منوی اصلی ----------
 
