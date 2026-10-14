@@ -34,6 +34,7 @@ DEFAULT_SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS"
 REFUND_RATE = 1
 # ---------------------------------------------------
 
+# ---------- توابع کمکی ----------
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     gy2 = gy - 1600
@@ -86,6 +87,7 @@ def format_task_message(order):
         f"—----------------------------"
     )
 
+# ---------- دیتابیس ----------
 async def get_sponsor_channels():
     raw = await redis.get(SPONSORS_KEY)
     if raw:
@@ -158,6 +160,7 @@ async def get_data():
 async def set_data(data):
     await redis.set(DATA_KEY, json.dumps(data))
 
+# ---------- بررسی عضویت ----------
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     sponsors = await get_sponsor_channels()
     if not sponsors:
@@ -185,178 +188,258 @@ async def send_subscription_message(update: Update, context: ContextTypes.DEFAUL
     )
     await update.message.reply_text(text)
 
-async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =====================================================
+# ---------- پنل ادمین ----------
+# =====================================================
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
-    args = context.args
-    if not args:
-        sponsors = await get_sponsor_channels()
-        if not sponsors:
-            await update.message.reply_text("لیست اسپانسرها خالی است.\n\nبرای افزودن: /sponsors @ch1,@ch2")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🪪 تنظیم اسپانسرها", callback_data="admin_set_sponsors")],
+        [InlineKeyboardButton("🚫 مسدود کردن کانال", callback_data="admin_block_channel")],
+        [InlineKeyboardButton("♻️ خارج کردن کانال از بلاک", callback_data="admin_unblock_channel")],
+        [InlineKeyboardButton("📋 لیست کانال‌های بلاک‌شده", callback_data="admin_blocked_list")],
+        [InlineKeyboardButton("⛔ مسدود کردن کاربر", callback_data="admin_block_user")],
+        [InlineKeyboardButton("✅ آزاد کردن کاربر", callback_data="admin_unblock_user")],
+        [InlineKeyboardButton("🟢 تکمیل سفارش", callback_data="admin_done_task")],
+        [InlineKeyboardButton("📢 پیام همگانی", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("💎 افزایش الماس به کاربر", callback_data="admin_give_coins")],
+    ])
+    await update.message.reply_text(
+        "🎛 پنل مدیریت ربات\n\n"
+        "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+        reply_markup=keyboard
+    )
+
+async def admin_panel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != ADMIN_ID:
+        return
+
+    action = query.data
+
+    if action == "admin_set_sponsors":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "set_sponsors"}
+        await set_data(data)
+        await query.edit_message_text(
+            "🪪 لطفاً اسپانسرها را به صورت لیست جدا شده با کاما ارسال کنید.\n\n"
+            "مثال:\n`@ch1,@ch2,@ch3`\n\n"
+            "برای حذف همه: `clear`\n"
+            "برای بازگشت به پیش‌فرض: `reset`",
+            parse_mode="Markdown"
+        )
+
+    elif action == "admin_block_channel":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "block_channel"}
+        await set_data(data)
+        await query.edit_message_text(
+            "🚫 لطفاً آیدی کانال مورد نظر را برای مسدود کردن ارسال کنید.\n\n"
+            "مثال: `@channel` یا `-1001234567890`",
+            parse_mode="Markdown"
+        )
+
+    elif action == "admin_unblock_channel":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "unblock_channel"}
+        await set_data(data)
+        await query.edit_message_text(
+            "♻️ لطفاً آیدی کانالی که می‌خواهید از بلاک خارج شود را ارسال کنید.\n\n"
+            "مثال: `@channel`",
+            parse_mode="Markdown"
+        )
+
+    elif action == "admin_blocked_list":
+        blocked = await get_blocked_channels()
+        if not blocked:
+            await query.edit_message_text("لیست کانال‌های بلاک‌شده خالی است.")
         else:
-            text = "📋 لیست اسپانسرهای فعلی:\n\n" + "\n".join([f"🆔 {ch}" for ch in sponsors])
-            text += "\n\n/sponsors @ch1,@ch2 → تغییر\n/sponsors clear → حذف همه\n/sponsors reset → بازگشت به پیش‌فرض"
-            await update.message.reply_text(text)
-        return
-    arg = args[0].strip().lower()
-    if arg == "clear":
-        await set_sponsor_channels([])
-        await update.message.reply_text("✅ همه اسپانسرها حذف شدند.")
-        return
-    if arg == "reset":
-        await set_sponsor_channels(DEFAULT_SPONSOR_CHANNELS)
-        text = "✅ بازگشت به پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
-        await update.message.reply_text(text)
-        return
-    channels = [c.strip() for c in args[0].split(",") if c.strip()]
-    if not channels:
-        await update.message.reply_text("❌ فرمت: /sponsors @ch1,@ch2,@ch3")
-        return
-    for ch in channels:
-        if not (ch.startswith("@") or ch.startswith("-") or ch.lstrip("-").isdigit()):
-            await update.message.reply_text(f"❌ آیدی «{ch}» معتبر نیست.")
-            return
-    await set_sponsor_channels(channels)
-    text = "✅ اسپانسرها به‌روز شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
-    await update.message.reply_text(text)
+            text = "🚫 کانال‌های مسدود شده:\n\n" + "\n".join([f"🆔 {ch}" for ch in blocked])
+            await query.edit_message_text(text)
 
-async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("فرمت: /block @channel")
-        return
-    ch = context.args[0].strip()
-    blocked = await get_blocked_channels()
-    if ch in blocked:
-        await update.message.reply_text(f"⚠️ {ch} قبلاً مسدود شده.")
-        return
-    blocked.append(ch)
-    await set_blocked_channels(blocked)
-    await update.message.reply_text(f"✅ کانال {ch} مسدود شد.")
+    elif action == "admin_block_user":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "block_user"}
+        await set_data(data)
+        await query.edit_message_text("⛔ لطفاً آیدی عددی کاربر مورد نظر را ارسال کنید.")
 
-async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("فرمت: /unblock @channel")
-        return
-    ch = context.args[0].strip()
-    blocked = await get_blocked_channels()
-    new_blocked = [b for b in blocked if b.lower() != ch.lower()]
-    if len(new_blocked) == len(blocked):
-        await update.message.reply_text(f"⚠️ {ch} در لیست بلاک نبود.")
-        return
-    await set_blocked_channels(new_blocked)
-    await update.message.reply_text(f"✅ {ch} از بلاک خارج شد.")
+    elif action == "admin_unblock_user":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "unblock_user"}
+        await set_data(data)
+        await query.edit_message_text("✅ لطفاً آیدی عددی کاربری که می‌خواهید آزاد شود را ارسال کنید.")
 
-async def blockedlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    blocked = await get_blocked_channels()
-    if not blocked:
-        await update.message.reply_text("لیست بلاک خالی است.")
-        return
-    text = "🚫 کانال‌های مسدود شده:\n\n" + "\n".join([f"🆔 {ch}" for ch in blocked])
-    await update.message.reply_text(text)
+    elif action == "admin_done_task":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "done_task"}
+        await set_data(data)
+        await query.edit_message_text("🟢 لطفاً شماره سفارش مورد نظر را ارسال کنید.")
 
-async def blockuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("فرمت: /blockuser <user_id>")
-        return
-    uid = context.args[0].strip()
-    users = await get_blocked_users()
-    if uid in [str(u) for u in users]:
-        await update.message.reply_text(f"⚠️ کاربر {uid} قبلاً مسدود شده.")
-        return
-    users.append(uid)
-    await set_blocked_users(users)
-    await update.message.reply_text(f"✅ کاربر {uid} مسدود شد.")
+    elif action == "admin_broadcast":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "broadcast"}
+        await set_data(data)
+        await query.edit_message_text(
+            "📢 لطفاً متن پیام همگانی را ارسال کنید.\n\n"
+            "برای ارسال عکس/ویدیو/فایل، روی پیام ریپلای کنید و کلمه `broadcast` را بفرستید."
+        )
 
-async def unblockuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("فرمت: /unblockuser <user_id>")
-        return
-    uid = context.args[0].strip()
-    users = await get_blocked_users()
-    new_users = [u for u in users if str(u) != uid]
-    if len(new_users) == len(users):
-        await update.message.reply_text(f"⚠️ کاربر {uid} در لیست بلاک نبود.")
-        return
-    await set_blocked_users(new_users)
-    await update.message.reply_text(f"✅ کاربر {uid} از بلاک خارج شد.")
+    elif action == "admin_give_coins":
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "give_coins"}
+        await set_data(data)
+        await query.edit_message_text(
+            "💎 لطفاً آیدی کاربر و مقدار الماس را به این صورت ارسال کنید:\n\n"
+            "`user_id amount`\n\n"
+            "مثال: `123456789 50`",
+            parse_mode="Markdown"
+        )
 
-async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        return
-    text = update.message.text.strip()
-    try:
-        task_id = int(text.replace("/done_", "").strip())
-    except Exception:
-        await update.message.reply_text("فرمت: /done_<task_id>")
-        return
-    data = await get_data()
-    task = next((t for t in data["tasks"] if t["id"] == task_id), None)
-    if not task:
-        await update.message.reply_text("❌ سفارش یافت نشد.")
-        return
-    if "message_id" in task:
+# ---------- پردازش ورودی‌های پنل ادمین ----------
+async def process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE, admin_action, text_input):
+    if admin_action == "set_sponsors":
+        arg = text_input.strip().lower()
+        if arg == "clear":
+            await set_sponsor_channels([])
+            await update.message.reply_text("✅ همه اسپانسرها حذف شدند.")
+            return True
+        if arg == "reset":
+            await set_sponsor_channels(DEFAULT_SPONSOR_CHANNELS)
+            txt = "✅ بازگشت به پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
+            await update.message.reply_text(txt)
+            return True
+        channels = [c.strip() for c in text_input.split(",") if c.strip()]
+        if not channels:
+            await update.message.reply_text("❌ فرمت نامعتبر. مثال: @ch1,@ch2,@ch3")
+            return True
+        for ch in channels:
+            if not (ch.startswith("@") or ch.startswith("-") or ch.lstrip("-").isdigit()):
+                await update.message.reply_text(f"❌ آیدی «{ch}» معتبر نیست.")
+                return True
+        await set_sponsor_channels(channels)
+        txt = "✅ اسپانسرها به‌روز شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
+        await update.message.reply_text(txt)
+        return True
+
+    elif admin_action == "block_channel":
+        ch = text_input.strip()
+        blocked = await get_blocked_channels()
+        if ch in blocked:
+            await update.message.reply_text(f"⚠️ {ch} قبلاً مسدود شده.")
+            return True
+        blocked.append(ch)
+        await set_blocked_channels(blocked)
+        await update.message.reply_text(f"✅ کانال {ch} مسدود شد.")
+        return True
+
+    elif admin_action == "unblock_channel":
+        ch = text_input.strip()
+        blocked = await get_blocked_channels()
+        new_blocked = [b for b in blocked if b.lower() != ch.lower()]
+        if len(new_blocked) == len(blocked):
+            await update.message.reply_text(f"⚠️ {ch} در لیست بلاک نبود.")
+            return True
+        await set_blocked_channels(new_blocked)
+        await update.message.reply_text(f"✅ {ch} از بلاک خارج شد.")
+        return True
+
+    elif admin_action == "block_user":
+        uid = text_input.strip()
+        if not uid.isdigit():
+            await update.message.reply_text("❌ آیدی عددی معتبر نیست.")
+            return True
+        users = await get_blocked_users()
+        if uid in [str(u) for u in users]:
+            await update.message.reply_text(f"⚠️ کاربر {uid} قبلاً مسدود شده.")
+            return True
+        users.append(uid)
+        await set_blocked_users(users)
+        await update.message.reply_text(f"✅ کاربر {uid} مسدود شد.")
+        return True
+
+    elif admin_action == "unblock_user":
+        uid = text_input.strip()
+        users = await get_blocked_users()
+        new_users = [u for u in users if str(u) != uid]
+        if len(new_users) == len(users):
+            await update.message.reply_text(f"⚠️ کاربر {uid} در لیست بلاک نبود.")
+            return True
+        await set_blocked_users(new_users)
+        await update.message.reply_text(f"✅ کاربر {uid} از بلاک خارج شد.")
+        return True
+
+    elif admin_action == "done_task":
         try:
-            await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
+            task_id = int(text_input.strip())
+        except ValueError:
+            await update.message.reply_text("❌ شماره سفارش باید عدد باشد.")
+            return True
+        data = await get_data()
+        task = next((t for t in data["tasks"] if t["id"] == task_id), None)
+        if not task:
+            await update.message.reply_text("❌ سفارش یافت نشد.")
+            return True
+        if "message_id" in task:
+            try:
+                await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
+            except Exception:
+                pass
+        data["tasks"].remove(task)
+        await set_data(data)
+        try:
+            await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما تکمیل شد💯💯💯")
         except Exception:
             pass
-    data["tasks"].remove(task)
-    await set_data(data)
-    try:
-        await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما تکمیل شد💯💯💯")
-    except Exception:
-        pass
-    await update.message.reply_text(f"✅ سفارش #{task_id} تکمیل شد.")
+        await update.message.reply_text(f"✅ سفارش #{task_id} تکمیل شد.")
+        return True
 
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
-        return
-    broadcast_text = None
-    if context.args:
-        broadcast_text = " ".join(context.args)
-    reply_message = update.message.reply_to_message
-    if not broadcast_text and not reply_message:
-        await update.message.reply_text(
-            "❌ برای ارسال پیام همگانی:\n"
-            "1️⃣ /broadcast متن پیام\n"
-            "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید"
-        )
-        return
-    await update.message.reply_text("⏳ ارسال پیام همگانی در حال انجام است...")
-    asyncio.create_task(run_broadcast(
-        bot=context.bot,
-        admin_chat_id=update.effective_chat.id,
-        broadcast_text=broadcast_text,
-        reply_message=reply_message
-    ))
+    elif admin_action == "broadcast":
+        await update.message.reply_text("⏳ ارسال پیام همگانی در حال انجام است...")
+        asyncio.create_task(run_broadcast(
+            bot=context.bot,
+            admin_chat_id=update.effective_chat.id,
+            broadcast_text=text_input,
+            reply_message=None
+        ))
+        return True
 
+    elif admin_action == "give_coins":
+        parts = text_input.strip().split()
+        if len(parts) != 2:
+            await update.message.reply_text("❌ فرمت صحیح: `<user_id> <amount>`", parse_mode="Markdown")
+            return True
+        target, amount_str = parts
+        try:
+            amount = int(amount_str)
+        except ValueError:
+            await update.message.reply_text("❌ مقدار باید عدد باشد.")
+            return True
+        data = await get_data()
+        if target.startswith("@"):
+            username = target[1:].lower()
+            uid = data.get("usernames", {}).get(username)
+            if not uid:
+                await update.message.reply_text("❌ کاربر با این یوزرنیم پیدا نشد.")
+                return True
+        else:
+            uid = str(target)
+        if uid not in data["users"]:
+            data["users"][uid] = 0
+        data["users"][uid] += amount
+        await set_data(data)
+        await update.message.reply_text(f"✅ {amount} الماس به کاربر {target} داده شد.")
+        return True
+
+    return False
+
+# ---------- پیام همگانی ----------
 async def run_broadcast(bot, admin_chat_id, broadcast_text, reply_message):
     data = await get_data()
     user_ids = list(data["users"].keys())
@@ -388,7 +471,33 @@ async def run_broadcast(bot, admin_chat_id, broadcast_text, reply_message):
     except Exception:
         pass
 
-# ---------- منوی اصلی (چینش جدید مطابق تصویر) ----------
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
+        return
+    broadcast_text = None
+    if context.args:
+        broadcast_text = " ".join(context.args)
+    reply_message = update.message.reply_to_message
+    if not broadcast_text and not reply_message:
+        await update.message.reply_text(
+            "❌ برای ارسال پیام همگانی:\n"
+            "1️⃣ /broadcast متن پیام\n"
+            "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید\n\n"
+            "یا از پنل ادمین /admin استفاده کنید."
+        )
+        return
+    await update.message.reply_text("⏳ ارسال پیام همگانی در حال انجام است...")
+    asyncio.create_task(run_broadcast(
+        bot=context.bot,
+        admin_chat_id=update.effective_chat.id,
+        broadcast_text=broadcast_text,
+        reply_message=reply_message
+    ))
+
+# ---------- منوی اصلی ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -451,38 +560,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_subscription_message(update, context)
         return
     await help_from_menu(update, context)
-
-async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        return
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
-        return
-    try:
-        parts = update.message.text.split()
-        if len(parts) != 3:
-            await update.message.reply_text("فرمت صحیح: /give <یوزرنیم یا آیدی عددی> <مقدار>")
-            return
-        target = parts[1]
-        amount = int(parts[2])
-        data = await get_data()
-        if target.startswith("@"):
-            username = target[1:].lower()
-            user_id = data.get("usernames", {}).get(username)
-            if not user_id:
-                await update.message.reply_text("❌ کاربر پیدا نشد.")
-                return
-        else:
-            user_id = str(target)
-        if user_id not in data["users"]:
-            data["users"][user_id] = 0
-        data["users"][user_id] += amount
-        await set_data(data)
-        await update.message.reply_text(f"✅ {amount} الماس به کاربر {target} داده شد.")
-    except ValueError:
-        await update.message.reply_text("لطفاً مقدار را عدد صحیح وارد کنید.")
-    except Exception as e:
-        await update.message.reply_text(f"خطا: {e}")
 
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
@@ -657,6 +734,15 @@ async def ord_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(task["owner_id"]) != user_id and update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ این سفارش متعلق به شما نیست.")
         return
+
+    keyboard = None
+    if "message_id" in task:
+        channel_username = ORDER_CHANNEL_ID.lstrip("@")
+        message_link = f"https://t.me/{channel_username}/{task['message_id']}"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📇 مشاهده ی سفارش در کانال", url=message_link)]
+        ])
+
     await update.message.reply_text(
         f"📦 جزئیات سفارش #{task['id']}\n\n"
         f"🌐 کانال: {task['target_id']}\n"
@@ -664,7 +750,8 @@ async def ord_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⏳ درخواستی: {task['count']}\n"
         f"👥 دریافتی: {task['claimed']}\n"
         f"💔 لفت‌ها: {task.get('left_count', 0)}\n"
-        f"💎 هزینه: {task['cost']} الماس"
+        f"💎 هزینه: {task['cost']} الماس",
+        reply_markup=keyboard
     )
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -806,8 +893,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     user_id = str(update.effective_user.id)
+
+    # اول بررسی ورودی‌های پنل ادمین
+    if update.effective_user.id == ADMIN_ID:
+        data = await get_data()
+        admin_state = data["states"].get(str(ADMIN_ID), {})
+        admin_action = admin_state.get("admin_action")
+        if admin_action:
+            handled = await process_admin_input(update, context, admin_action, update.message.text)
+            if handled:
+                data = await get_data()
+                data["states"].pop(str(ADMIN_ID), None)
+                await set_data(data)
+                return
+
     if await is_user_blocked(user_id):
         return
+
     data = await get_data()
     state = data["states"].get(user_id, {})
     if "awaiting_order" in state:
@@ -1154,21 +1256,16 @@ async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+# ---------- راه‌اندازی ----------
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
-app_bot.add_handler(CommandHandler("give", give_coins))
+app_bot.add_handler(CommandHandler("admin", admin_panel))
 app_bot.add_handler(CommandHandler("balance", balance))
-app_bot.add_handler(CommandHandler("sponsors", sponsors_command))
 app_bot.add_handler(CommandHandler("broadcast", broadcast_command))
-app_bot.add_handler(CommandHandler("block", block_command))
-app_bot.add_handler(CommandHandler("unblock", unblock_command))
-app_bot.add_handler(CommandHandler("blockedlist", blockedlist_command))
-app_bot.add_handler(CommandHandler("blockuser", blockuser_command))
-app_bot.add_handler(CommandHandler("unblockuser", unblockuser_command))
-app_bot.add_handler(MessageHandler(filters.Regex(r"^/done_\d+$") & filters.ChatType.PRIVATE, done_command))
 app_bot.add_handler(MessageHandler(filters.Regex(r"^/ord_\d+$") & filters.ChatType.PRIVATE, ord_command))
 app_bot.add_handler(MessageHandler(filters.Regex(r"^/cancel_\d+$") & filters.ChatType.PRIVATE, cancel_command))
+app_bot.add_handler(CallbackQueryHandler(admin_panel_callback, pattern="^admin_"))
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
