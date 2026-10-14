@@ -28,12 +28,12 @@ ADMIN_USERNAME = "@Dorinamm"
 ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
 CHANNEL_USERNAME = "Membergir_ViewPlus"
+DAILY_COINS_AMOUNT = 3
+DAILY_COINS_COOLDOWN_HOURS = 24
 DEFAULT_SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
-
-REFUND_RATE = 1   # به ازای هر ممبر باقی‌مانده چند الماس برگردانده شود
+REFUND_RATE = 1
 # ---------------------------------------------------
 
-# ---------- توابع کمکی ----------
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     gy2 = gy - 1600
@@ -63,7 +63,7 @@ def gregorian_to_jalali(gy, gm, gd):
     jd = j_day_no + 1
     return jy, jm, jd
 
-def format_task_message(order, index=None):
+def format_task_message(order):
     try:
         dt = datetime.fromisoformat(order["created_at"])
         jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
@@ -72,9 +72,7 @@ def format_task_message(order, index=None):
     except Exception:
         date_str = "---"
         time_str = "---"
-
-    remaining = order["count"] - order["claimed"]
-    text = (
+    return (
         f"❇️ شماره سفارش: {order['id']}\n"
         f"🌐 آیدی کانال : {order['target_id']}\n"
         f"📆 تاریخ درخواست: {date_str}\n"
@@ -87,9 +85,7 @@ def format_task_message(order, index=None):
         f"‼️ وضعیت سفارش: در حال اجرا ♻\n"
         f"—----------------------------"
     )
-    return text
 
-# ---------- توابع دیتابیس ----------
 async def get_sponsor_channels():
     raw = await redis.get(SPONSORS_KEY)
     if raw:
@@ -162,7 +158,6 @@ async def get_data():
 async def set_data(data):
     await redis.set(DATA_KEY, json.dumps(data))
 
-# ---------- بررسی عضویت ----------
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     sponsors = await get_sponsor_channels()
     if not sponsors:
@@ -190,14 +185,12 @@ async def send_subscription_message(update: Update, context: ContextTypes.DEFAUL
     )
     await update.message.reply_text(text)
 
-# ---------- دستور ادمین: اسپانسرها ----------
 async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
-
     args = context.args
     if not args:
         sponsors = await get_sponsor_channels()
@@ -208,7 +201,6 @@ async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += "\n\n/sponsors @ch1,@ch2 → تغییر\n/sponsors clear → حذف همه\n/sponsors reset → بازگشت به پیش‌فرض"
             await update.message.reply_text(text)
         return
-
     arg = args[0].strip().lower()
     if arg == "clear":
         await set_sponsor_channels([])
@@ -219,7 +211,6 @@ async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "✅ بازگشت به پیش‌فرض:\n\n" + "\n".join([f"🆔 {ch}" for ch in DEFAULT_SPONSOR_CHANNELS])
         await update.message.reply_text(text)
         return
-
     channels = [c.strip() for c in args[0].split(",") if c.strip()]
     if not channels:
         await update.message.reply_text("❌ فرمت: /sponsors @ch1,@ch2,@ch3")
@@ -232,17 +223,13 @@ async def sponsors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "✅ اسپانسرها به‌روز شدند:\n\n" + "\n".join([f"🆔 {ch}" for ch in channels])
     await update.message.reply_text(text)
 
-# ---------- دستور ادمین: بلاک کردن کانال ----------
 async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         return
     if not context.args:
-        await update.message.reply_text(
-            "فرمت: /block @channel\n"
-            "یا: /block -1001234567890"
-        )
+        await update.message.reply_text("فرمت: /block @channel")
         return
     ch = context.args[0].strip()
     blocked = await get_blocked_channels()
@@ -282,7 +269,6 @@ async def blockedlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = "🚫 کانال‌های مسدود شده:\n\n" + "\n".join([f"🆔 {ch}" for ch in blocked])
     await update.message.reply_text(text)
 
-# ---------- دستور ادمین: بلاک/آنبلاک کاربر ----------
 async def blockuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -317,61 +303,45 @@ async def unblockuser_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await set_blocked_users(new_users)
     await update.message.reply_text(f"✅ کاربر {uid} از بلاک خارج شد.")
 
-# ---------- دستور ادمین: تکمیل سفارش ----------
 async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         return
     text = update.message.text.strip()
-    # /done_<id>
     try:
         task_id = int(text.replace("/done_", "").strip())
     except Exception:
         await update.message.reply_text("فرمت: /done_<task_id>")
         return
-
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
         await update.message.reply_text("❌ سفارش یافت نشد.")
         return
-
-    # حذف پیام کانال
     if "message_id" in task:
         try:
             await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
         except Exception:
             pass
-
-    # حذف از لیست
     data["tasks"].remove(task)
     await set_data(data)
-
-    # اطلاع به صاحب سفارش
     try:
-        await context.bot.send_message(
-            chat_id=task["owner_id"],
-            text="سفارش شما تکمیل شد💯💯💯"
-        )
+        await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما تکمیل شد💯💯💯")
     except Exception:
         pass
-
     await update.message.reply_text(f"✅ سفارش #{task_id} تکمیل شد.")
 
-# ---------- دستور ادمین: پیام همگانی ----------
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
-
     broadcast_text = None
     if context.args:
         broadcast_text = " ".join(context.args)
     reply_message = update.message.reply_to_message
-
     if not broadcast_text and not reply_message:
         await update.message.reply_text(
             "❌ برای ارسال پیام همگانی:\n"
@@ -379,17 +349,13 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "2️⃣ روی یک پیام ریپلای کنید و /broadcast بزنید"
         )
         return
-
     await update.message.reply_text("⏳ ارسال پیام همگانی در حال انجام است...")
-
-    asyncio.create_task(
-        run_broadcast(
-            bot=context.bot,
-            admin_chat_id=update.effective_chat.id,
-            broadcast_text=broadcast_text,
-            reply_message=reply_message
-        )
-    )
+    asyncio.create_task(run_broadcast(
+        bot=context.bot,
+        admin_chat_id=update.effective_chat.id,
+        broadcast_text=broadcast_text,
+        reply_message=reply_message
+    ))
 
 async def run_broadcast(bot, admin_chat_id, broadcast_text, reply_message):
     data = await get_data()
@@ -422,27 +388,22 @@ async def run_broadcast(bot, admin_chat_id, broadcast_text, reply_message):
     except Exception:
         pass
 
-# ---------- منوی اصلی ----------
+# ---------- منوی اصلی (چینش جدید مطابق تصویر) ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
-
     user_id = str(update.effective_user.id)
-
     if await is_user_blocked(user_id):
         await update.message.reply_text("🚫 حساب شما توسط ادمین مسدود شده است.")
         return
-
     data = await get_data()
     is_new = user_id not in data["users"]
     if is_new:
         data["users"][user_id] = 10
     else:
         data["users"].setdefault(user_id, 0)
-
     if update.effective_user.username:
         data["usernames"][update.effective_user.username.lower()] = user_id
-
     if context.args and len(context.args) > 0:
         arg = context.args[0]
         if arg.startswith("ref_") and is_new:
@@ -451,18 +412,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 referrer_id = int(ref)
                 if referrer_id != int(user_id):
                     data["users"][str(referrer_id)] = data["users"].get(str(referrer_id), 0) + 15
-
     await set_data(data)
 
     keyboard = ReplyKeyboardMarkup(
         [
-            [KeyboardButton("💎 دریافت الماس رایگان")],
-            [KeyboardButton("👥 سفارش ممبر")],
-            [KeyboardButton("🛍️ فروشگاه")],
-            [KeyboardButton("👤 حساب کاربری")],
-            [KeyboardButton("📦 پیگیری سفارش")],
-            [KeyboardButton("👥️ جذب زیر مجموعه")],
-            [KeyboardButton("📚 راهنما")]
+            [KeyboardButton("💎 دریافت الماس رایگان 💎")],
+            [
+                KeyboardButton("👥 سفارش ممبر"),
+                KeyboardButton("🛍️ خرید الماس"),
+                KeyboardButton("👤 حساب کاربری")
+            ],
+            [
+                KeyboardButton("👥️ زیرمجموعه گیری"),
+                KeyboardButton("📚 راهنما")
+            ],
+            [
+                KeyboardButton("🔍 پیگیری سفارشات")
+            ]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
@@ -478,7 +444,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, reply_markup=keyboard)
 
-# ---------- /help ----------
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -487,24 +452,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await help_from_menu(update, context)
 
-# ---------- دستور ادمین: افزایش الماس ----------
 async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما اجازه استفاده از این دستور را ندارید.")
         return
-
     try:
         parts = update.message.text.split()
         if len(parts) != 3:
             await update.message.reply_text("فرمت صحیح: /give <یوزرنیم یا آیدی عددی> <مقدار>")
             return
-
         target = parts[1]
         amount = int(parts[2])
         data = await get_data()
-
         if target.startswith("@"):
             username = target[1:].lower()
             user_id = data.get("usernames", {}).get(username)
@@ -513,10 +474,8 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         else:
             user_id = str(target)
-
         if user_id not in data["users"]:
             data["users"][user_id] = 0
-
         data["users"][user_id] += amount
         await set_data(data)
         await update.message.reply_text(f"✅ {amount} الماس به کاربر {target} داده شد.")
@@ -525,16 +484,14 @@ async def give_coins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"خطا: {e}")
 
-# ---------- فروشگاه ----------
 async def shop_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     text = (
-        "🛍 به فروشگاه ربات ویو پلاس خوش آمدید💰\n"
+        "🛍 به فروشگاه ربات ویو پلاس خوش آمدید💎\n"
         "لطفا گزینه ی مورد نظر را جهت خرید انتخاب کنید 👇"
     )
     keyboard = InlineKeyboardMarkup([
@@ -574,35 +531,67 @@ async def shop_sponsor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text)
 
-# ---------- دریافت الماس رایگان ----------
 async def free_coins_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     text = (
         "به بخش دریافت الماس رایگان خوش آمدید💫\n\n"
-        "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون الماس جمع آوری کنید سپس با الماس های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
+        "📌 در این بخش می‌تونید با استفاده از یک روش زیر برای خودتون الماس 💎جمع آوری کنید سپس با الماس های جمع آوری شده برای کانال/گروه خود ممبر سفارش بدید.\n\n"
         "👈 یک روش برای جمع آوری الماس وجود دارد:\n\n"
-        "1️⃣ عضویت در سفارش های موجود: در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری الماس نمایید.\n\n"
+        "1️⃣ عضویت در سفارش های موجود: \n"
+        "در این روش شما می‌توانید با عضویت در سفارشات موجود و سپس زدن دکمه ی دریافت اقدام به جمع آوری الماس نمایید.\n\n"
         "‼️اگر کمتر از 4روز از کانال ها لفت بدید 3 الماس از شما کسر میشود \n\n"
         "🫂 همچنین از طریق زیر مجموعه گیری هم می‌تونید تا بی‌نهایت الماس رایگان کسب کنید."
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}")]
+        [
+            InlineKeyboardButton("📢 عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME}"),
+            InlineKeyboardButton("💎 دریافت الماس روزانه 💎", callback_data="daily_coins")
+        ]
     ])
     await update.message.reply_text(text, reply_markup=keyboard)
 
-# ---------- راهنما ----------
+async def daily_coins_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = str(query.from_user.id)
+    data = await get_data()
+    now = datetime.now(timezone.utc)
+    last_claim_str = data["daily_claims"].get(user_id)
+    if last_claim_str:
+        try:
+            last_claim = datetime.fromisoformat(last_claim_str)
+            elapsed = now - last_claim
+            cooldown = timedelta(hours=DAILY_COINS_COOLDOWN_HOURS)
+            if elapsed < cooldown:
+                remaining = cooldown - elapsed
+                hours = remaining.seconds // 3600
+                minutes = (remaining.seconds % 3600) // 60
+                await query.answer(
+                    f"⏳ شما الماس روزانه خود را دریافت کرده‌اید.\n"
+                    f"زمان باقی‌مانده: {hours} ساعت و {minutes} دقیقه",
+                    show_alert=True
+                )
+                return
+        except Exception:
+            pass
+    data["users"][user_id] = data["users"].get(user_id, 0) + DAILY_COINS_AMOUNT
+    data["daily_claims"][user_id] = now.isoformat()
+    await set_data(data)
+    current_balance = data["users"][user_id]
+    await query.answer(
+        f"💎 {DAILY_COINS_AMOUNT} الماس دریافت کردید | موجودی: {current_balance} الماس",
+        show_alert=True
+    )
+
 async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     help_text = (
         "«🤔راهنمای ممبرگیر | ویوپلاس»\n\n"
         "(✅لطفاً تمام متن را با دقت بخوانید✅)\n\n"
@@ -622,12 +611,7 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⛔️|روش ادمین کردن ربات به این صورت است که وارد کانال یا گروه تون شوید و به قسمت ادمین ها بروید و اضافه کردن ادمین را انتخاب کنید سپس روی سرچ بزنید و ایدی ربات( @Seen_member_jet_bot ) را سرچ کنید و ربات مارا ادمین کنید!\n"
         "●\n"
         "⁉️ممبر هایی که از طریق ربات ممبرگیر | ویوپلاس به کانال و گروه اضافه میشن واقعی هستن؟\n\n"
-        "بله.کاملا واقعی و ایرانی که به دلیل واقعی بودن بازدید هم دارن و اگر از کانال و گروهتون خوششون بیاد ممکنه تا همیشه بمونن و لفت ندن😊\n\n"
-        "●\n"
-        "⁉️چرا سفارشم تکمیل شده ولی تعداد ممبر دریافتیم کمتر از سفارشم هست؟!\n"
-        "⚠️دو دلیل داره:\n"
-        "1⃣یا اون تعداد از قبل عضو کانال یا گروه شما شده بودن اما از سفارشتون الماس گرفتن.\n"
-        "2⃣یا ربات رو ادمین گروه تون نکردید و سفارش دادید.وقتی این کارو کنید ربات  حتی اگر دیگران عضو گروه شما نشن  و روی دکمه دریافت الماس بزنن هم بهشون الماس میده ؛ چون ادمین گروهتون نیست!\n"
+        "بله.کاملا واقعی و ایرانی که به دلیل واقعی بودن بازدید هم دارن.\n\n"
         "°\n"
         "‼️توجه :\n"
         "•در صورت باز نشدن دکمه های ربات لطفاً با ارسال دستور /start ربات را استارت کنید!\n"
@@ -638,29 +622,23 @@ async def help_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
-# ---------- پیگیری سفارش ----------
 async def track_order_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     user_id = str(update.effective_user.id)
     data = await get_data()
     user_tasks = [t for t in data["tasks"] if t["owner_id"] == int(user_id)]
-
     if not user_tasks:
         await update.message.reply_text("شما سفارش جاری ندارید.")
         return
-
     text = "سفارشات اخیر شما:\n\n"
     for t in user_tasks:
         text += format_task_message(t) + "\n"
-
     await update.message.reply_text(text)
 
-# ---------- دستور /ord_<id> ----------
 async def ord_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -670,19 +648,15 @@ async def ord_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("فرمت: /ord_<id>")
         return
-
     user_id = str(update.effective_user.id)
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
-
     if not task:
         await update.message.reply_text("❌ این سفارش دیگر موجود نیست.")
         return
-
     if str(task["owner_id"]) != user_id and update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ این سفارش متعلق به شما نیست.")
         return
-
     await update.message.reply_text(
         f"📦 جزئیات سفارش #{task['id']}\n\n"
         f"🌐 کانال: {task['target_id']}\n"
@@ -690,10 +664,9 @@ async def ord_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⏳ درخواستی: {task['count']}\n"
         f"👥 دریافتی: {task['claimed']}\n"
         f"💔 لفت‌ها: {task.get('left_count', 0)}\n"
-        f"💰 هزینه: {task['cost']} الماس 💎"
+        f"💎 هزینه: {task['cost']} الماس"
     )
 
-# ---------- دستور /cancel_<id> ----------
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -703,29 +676,23 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await update.message.reply_text("فرمت: /cancel_<id>")
         return
-
     user_id = str(update.effective_user.id)
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
-
     if not task:
         await update.message.reply_text("❌ این سفارش دیگر موجود نیست.")
         return
-
     if str(task["owner_id"]) != user_id and update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ این سفارش متعلق به شما نیست.")
         return
-
     remaining = task["count"] - task["claimed"]
     refund = remaining * REFUND_RATE
-
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅️ بله", callback_data=f"confirm_cancel_{task_id}"),
             InlineKeyboardButton("❌️ خیر", callback_data=f"decline_cancel_{task_id}")
         ]
     ])
-
     await update.message.reply_text(
         "⁉️آیا مایل به لغو این تبلیغ هستید؟\n\n"
         f"⚠️توجه داشته باشید با ضریب {REFUND_RATE} معادل ممبر های باقی مانده الماس به حساب شما بازگشت داده خواهد شد.\n"
@@ -738,32 +705,24 @@ async def confirm_cancel_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     task_id = int(query.data.split("_")[-1])
     user_id = str(query.from_user.id)
-
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
-
     if not task:
         await query.edit_message_text("❌ این سفارش دیگر موجود نیست.")
         return
-
     if str(task["owner_id"]) != user_id and query.from_user.id != ADMIN_ID:
         await query.edit_message_text("❌ این سفارش متعلق به شما نیست.")
         return
-
     remaining = task["count"] - task["claimed"]
     refund = remaining * REFUND_RATE
-
     data["users"][str(task["owner_id"])] = data["users"].get(str(task["owner_id"]), 0) + refund
     data["tasks"].remove(task)
     await set_data(data)
-
-    # حذف پیام کانال
     if "message_id" in task:
         try:
             await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
         except Exception:
             pass
-
     await query.edit_message_text(
         f"✅ سفارش #{task_id} لغو شد.\n"
         f"💎 {refund} الماس به حساب شما بازگشت داده شد."
@@ -774,7 +733,6 @@ async def decline_cancel_callback(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     await query.edit_message_text("❌ لغو سفارش انجام نشد.")
 
-# ---------- سفارش ممبر ----------
 PACKAGES = {
     "member_5": {"count": 5, "cost": 10, "reward": 2},
     "member_10": {"count": 10, "cost": 20, "reward": 2},
@@ -791,7 +749,6 @@ async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_T
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("👥️ 5 ممبر | 10 💎", callback_data="member_5")],
         [InlineKeyboardButton("👥️ 10 ممبر | 20 💎", callback_data="member_10")],
@@ -810,23 +767,18 @@ async def order_member_from_menu(update: Update, context: ContextTypes.DEFAULT_T
 async def package_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     package_key = query.data
     user_id = str(query.from_user.id)
-
     data = await get_data()
     cost = PACKAGES[package_key]["cost"]
     if data["users"].get(user_id, 0) < cost:
         await query.answer("💎 موجودی شما کافی نمی باشد 🚫", show_alert=False)
         return
-
     data["states"][user_id] = {"awaiting_order": package_key}
     await set_data(data)
-
     text = (
         "✅ جهت دریافت ممبر باید ابتدا ربات را ادمین کانال مورد نظر کنید سپس آیدی کانال را ارسال نمایید\n\n"
         "👈 نمونه : @viewpluse یا https://t.me/viewpluse\n"
@@ -845,7 +797,6 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = await get_data()
     data["states"].pop(user_id, None)
     await set_data(data)
-
     try:
         await query.delete_message()
     except:
@@ -854,19 +805,14 @@ async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
-
     user_id = str(update.effective_user.id)
-
     if await is_user_blocked(user_id):
         return
-
     data = await get_data()
     state = data["states"].get(user_id, {})
-
     if "awaiting_order" in state:
         package_key = state.pop("awaiting_order")
         raw_input = update.message.text.strip()
-
         if raw_input.startswith("https://t.me/"):
             raw_input = raw_input.split("/")[-1]
             if raw_input.startswith("+"):
@@ -880,15 +826,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ فرمت آیدی کانال صحیح نیست. لطفاً به صورت @username یا https://t.me/username ارسال کنید.")
             return
-
-        # بررسی بلاک بودن کانال
         if await is_channel_blocked(target):
             await update.message.reply_text("🚫 این کانال توسط ادمین مسدود شده است و امکان ثبت سفارش برای آن وجود ندارد.")
             return
-
         target_channel_id = target
         cost = PACKAGES[package_key]["cost"]
-
         bot_id = (await context.bot.get_me()).id
         try:
             bot_member = await context.bot.get_chat_member(chat_id=target_channel_id, user_id=bot_id)
@@ -898,13 +840,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await update.message.reply_text("🚫جهت ثبت سفارش، ربات باید در کانال/گروه ادمین باشد.")
             return
-
         if data["users"].get(user_id, 0) < cost:
             await update.message.reply_text("موجودی کافی نیست.")
             return
-
         data["users"][user_id] -= cost
-
         now_iso = datetime.now(timezone.utc).isoformat()
         task = {
             "id": data["next_task_id"],
@@ -922,7 +861,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["tasks"].append(task)
         data["next_task_id"] += 1
         await set_data(data)
-
         channel_title = target_channel_id
         channel_description = ""
         channel_id = target_channel_id
@@ -933,7 +871,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             channel_id = target_channel_id
         except:
             pass
-
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🪩 سفارش جدید عضویت 🪩", callback_data="noop")],
             [
@@ -943,7 +880,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("♻️ ورود به ربات", url="https://t.me/Seen_member_jet_bot")],
             [InlineKeyboardButton("🚫 تخلف", callback_data=f"report_task_{task['id']}")]
         ])
-
         try:
             sent_message = await context.bot.send_message(
                 chat_id=ORDER_CHANNEL_ID,
@@ -958,7 +894,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_data(data)
         except Exception as e:
             await update.message.reply_text(f"خطا در ارسال سفارش به کانال: {e}")
-
         confirmation_keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("مشاهده ی سفارش", url=ORDER_CHANNEL_URL)]
         ])
@@ -970,14 +905,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=confirmation_keyboard
         )
         return
-
-    if update.message.text == "💎 دریافت الماس رایگان":
+    if update.message.text == "💎 دریافت الماس رایگان 💎":
         await free_coins_from_menu(update, context)
         return
     if update.message.text == "👥 سفارش ممبر":
         await order_member_from_menu(update, context)
         return
-    if update.message.text == "🛍️ فروشگاه":
+    if update.message.text == "🛍️ خرید الماس":
         await shop_from_menu(update, context)
         return
     if update.message.text == "👤 حساب کاربری":
@@ -987,10 +921,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bal = data["users"].get(user_id, 0)
         await update.message.reply_text(f"💎 موجودی شما: {bal} الماس")
         return
-    if update.message.text == "📦 پیگیری سفارش":
+    if update.message.text == "🔍 پیگیری سفارشات":
         await track_order_menu(update, context)
         return
-    if update.message.text == "👥️ جذب زیر مجموعه":
+    if update.message.text == "👥️ زیرمجموعه گیری":
         if not await check_subscription(update, context):
             await send_subscription_message(update, context)
             return
@@ -1000,18 +934,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await help_from_menu(update, context)
         return
 
-# ---------- گزارش تخلف ----------
 async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     task_id = int(query.data.split("_")[-1])
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
         await query.answer("سفارش یافت نشد.", show_alert=False)
         return
-
     report_text = (
         "🚨 گزارش تخلف سفارش\n\n"
         f"📦 کد سفارش: {task['id']}\n"
@@ -1021,18 +952,11 @@ async def report_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 تعداد درخواستی: {task['count']}\n"
         f"✅ تعداد دریافتی: {task['claimed']}"
     )
-
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🚫 مسدود کردن کاربر", callback_data=f"block_user_{task['owner_id']}")]
     ])
-
     try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=report_text,
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
+        await context.bot.send_message(chat_id=ADMIN_ID, text=report_text, reply_markup=keyboard, parse_mode="Markdown")
         await query.answer("گزارش تخلف شما ثبت شد.", show_alert=False)
     except Exception:
         await query.answer("خطا در ارسال گزارش به ادمین.", show_alert=False)
@@ -1051,60 +975,48 @@ async def block_user_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await set_blocked_users(users)
     await query.edit_message_text(f"✅ کاربر {uid} مسدود شد.")
 
-# ---------- دریافت الماس ----------
 async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     task_id = int(query.data.split("_")[-1])
-
     if await is_user_blocked(user_id):
         await query.answer("حساب شما مسدود است.", show_alert=False)
         return
-
     data = await get_data()
     task = next((t for t in data["tasks"] if t["id"] == task_id), None)
     if not task:
-        # حذف پیام از کانال
         try:
             await query.message.delete()
         except:
             pass
         await query.answer("این سفارش دیگر موجود نیست.", show_alert=False)
         return
-
     bot_id = (await context.bot.get_me()).id
     try:
         bot_member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=bot_id)
         bot_is_admin = bot_member.status in ["administrator", "creator"]
     except Exception:
         bot_is_admin = False
-
     if not bot_is_admin:
         data["tasks"].remove(task)
         await set_data(data)
-
         if "message_id" in task:
             try:
                 await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
             except:
                 pass
-
         try:
             await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما به دلیل ادمین نبودن ربات حذف شد")
         except:
             pass
-
         await query.answer("ربات در کانال ادمین نیست، سفارش حذف شد.", show_alert=False)
         return
-
     if str(user_id) in data["completed"].get(str(task_id), {}):
         await query.answer("شما قبلاً الماس را دریافت کرده‌اید", show_alert=False)
         return
-
     if not await check_subscription(update, context):
         await query.answer("ابتدا در کانال‌های اسپانسر عضو شوید.", show_alert=False)
         return
-
     now = datetime.now(timezone.utc)
     for record in data["join_records"]:
         if record["user_id"] == str(user_id) and record["target_id"] == task["target_id"]:
@@ -1112,7 +1024,6 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if (now - joined_at) < timedelta(days=4):
                 await query.answer("شما قبلاً از این کانال الماس گرفته‌اید. تا ۴ روز دیگر نمی‌توانید دوباره دریافت کنید.", show_alert=False)
                 return
-
     try:
         member = await context.bot.get_chat_member(chat_id=task["target_id"], user_id=user_id)
         if member.status not in ["member", "administrator", "creator"]:
@@ -1121,11 +1032,9 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await query.answer("خطا در بررسی عضویت.", show_alert=False)
         return
-
     data["users"][str(user_id)] = data["users"].get(str(user_id), 0) + task["reward"]
     data["completed"].setdefault(str(task_id), {})[str(user_id)] = now.isoformat()
     task["claimed"] += 1
-
     data["join_records"].append({
         "user_id": str(user_id),
         "task_id": task_id,
@@ -1133,92 +1042,67 @@ async def claim_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "owner_id": task["owner_id"],
         "joined_at": now.isoformat()
     })
-
     if task["claimed"] >= task["count"]:
         data["tasks"].remove(task)
         await set_data(data)
-
         if "message_id" in task:
             try:
                 await context.bot.delete_message(chat_id=ORDER_CHANNEL_ID, message_id=task["message_id"])
             except:
                 pass
-
         try:
-            await context.bot.send_message(
-                chat_id=task["owner_id"],
-                text="سفارش شما تکمیل شد💯💯💯"
-            )
+            await context.bot.send_message(chat_id=task["owner_id"], text="سفارش شما تکمیل شد💯💯💯")
         except:
             pass
     else:
         await set_data(data)
-
     current_balance = data["users"][str(user_id)]
     await query.answer(
         f"💎 {task['reward']} الماس کسب کردید | موجودی: {current_balance} الماس",
         show_alert=False
     )
 
-# ---------- بررسی ترک زودهنگام ----------
 async def check_early_leaves():
     data = await get_data()
     now = datetime.now(timezone.utc)
     penalized = False
-
     remaining_records = []
     for record in data["join_records"]:
         joined_at = datetime.fromisoformat(record["joined_at"])
         age = now - joined_at
-
         if age >= timedelta(days=4):
             continue
-
         try:
-            member = await app_bot.bot.get_chat_member(
-                chat_id=record["target_id"],
-                user_id=int(record["user_id"])
-            )
+            member = await app_bot.bot.get_chat_member(chat_id=record["target_id"], user_id=int(record["user_id"]))
             if member.status not in ["member", "administrator", "creator"]:
                 user_id = record["user_id"]
                 owner_id = str(record["owner_id"])
-
                 data["users"][user_id] = max(0, data["users"].get(user_id, 0) - 3)
                 data["users"][owner_id] = data["users"].get(owner_id, 0) + 2
-
-                # افزایش left_count برای تسک مربوطه
                 for t in data["tasks"]:
                     if t["id"] == record["task_id"]:
                         t["left_count"] = t.get("left_count", 0) + 1
                         break
-
                 try:
-                    await app_bot.bot.send_message(
-                        chat_id=int(user_id),
-                        text="به دلیل ترک کانال کمتر از 4روز 3 الماس از شما کسر شد"
-                    )
+                    await app_bot.bot.send_message(chat_id=int(user_id), text="به دلیل ترک کانال کمتر از 4روز 3 الماس از شما کسر شد")
                 except:
                     pass
-
                 penalized = True
             else:
                 remaining_records.append(record)
         except:
             remaining_records.append(record)
-
     data["join_records"] = remaining_records
     if penalized:
         await set_data(data)
     return penalized
 
-# ---------- جذب زیر مجموعه ----------
 async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     if not await check_subscription(update, context):
         await send_subscription_message(update, context)
         return
-
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("دریافت بنر زیر مجموعه گیری", callback_data="referral_banner")]
     ])
@@ -1231,10 +1115,8 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-
     bot_username = (await context.bot.get_me()).username
     referral_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
-
     text = (
         "🚀 با ممبرگیر |ویوپلاس به راحتی اعضای کانال و گروه خود را بصورت (رایگان؛پولی) افزایش دهید!\n"
         "👥 افزایش اعضای کانال و گروه شما\n"
@@ -1246,7 +1128,6 @@ async def referral_banner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text)
 
-# ---------- حساب کاربری ----------
 async def account_from_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -1269,12 +1150,10 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bal = data["users"].get(user_id, 0)
     await update.message.reply_text(f"💎 موجودی شما: {bal} الماس")
 
-# ---------- noop ----------
 async def noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-# ---------- راه‌اندازی ----------
 app_bot = Application.builder().token(TOKEN).build()
 app_bot.add_handler(CommandHandler("start", start))
 app_bot.add_handler(CommandHandler("help", help_command))
@@ -1287,11 +1166,9 @@ app_bot.add_handler(CommandHandler("unblock", unblock_command))
 app_bot.add_handler(CommandHandler("blockedlist", blockedlist_command))
 app_bot.add_handler(CommandHandler("blockuser", blockuser_command))
 app_bot.add_handler(CommandHandler("unblockuser", unblockuser_command))
-# دستورات داینامیک (باید با filters.Regex باشند)
 app_bot.add_handler(MessageHandler(filters.Regex(r"^/done_\d+$") & filters.ChatType.PRIVATE, done_command))
 app_bot.add_handler(MessageHandler(filters.Regex(r"^/ord_\d+$") & filters.ChatType.PRIVATE, ord_command))
 app_bot.add_handler(MessageHandler(filters.Regex(r"^/cancel_\d+$") & filters.ChatType.PRIVATE, cancel_command))
-
 app_bot.add_handler(CallbackQueryHandler(package_selected, pattern="^member_"))
 app_bot.add_handler(CallbackQueryHandler(cancel_order, pattern="^cancel_order$"))
 app_bot.add_handler(CallbackQueryHandler(referral_banner, pattern="^referral_banner$"))
@@ -1303,21 +1180,16 @@ app_bot.add_handler(CallbackQueryHandler(report_task, pattern="^report_task_"))
 app_bot.add_handler(CallbackQueryHandler(block_user_callback, pattern="^block_user_"))
 app_bot.add_handler(CallbackQueryHandler(confirm_cancel_callback, pattern="^confirm_cancel_"))
 app_bot.add_handler(CallbackQueryHandler(decline_cancel_callback, pattern="^decline_cancel_"))
-app_bot.add_handler(MessageHandler(filters.Text(["💎 دریافت الماس رایگان"]), free_coins_from_menu))
+app_bot.add_handler(CallbackQueryHandler(daily_coins_callback, pattern="^daily_coins$"))
+app_bot.add_handler(MessageHandler(filters.Text(["💎 دریافت الماس رایگان 💎"]), free_coins_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👥 سفارش ممبر"]), order_member_from_menu))
-app_bot.add_handler(MessageHandler(filters.Text(["🛍️ فروشگاه"]), shop_from_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["🛍️ خرید الماس"]), shop_from_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["👤 حساب کاربری"]), account_from_menu))
-app_bot.add_handler(MessageHandler(filters.Text(["📦 پیگیری سفارش"]), track_order_menu))
-app_bot.add_handler(MessageHandler(filters.Text(["👥️ جذب زیر مجموعه"]), referral_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["🔍 پیگیری سفارشات"]), track_order_menu))
+app_bot.add_handler(MessageHandler(filters.Text(["👥️ زیرمجموعه گیری"]), referral_menu))
 app_bot.add_handler(MessageHandler(filters.Text(["📚 راهنما"]), help_from_menu))
-app_bot.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_text
-    )
-)
+app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# ---------- FastAPI ----------
 app = FastAPI()
 
 @app.get("/")
