@@ -27,7 +27,7 @@ ADMIN_ID = 7724653657
 ADMIN_USERNAME = "@Dorinamm"
 ORDER_CHANNEL_ID = "@viewpluse"
 ORDER_CHANNEL_URL = "https://t.me/viewpluse"
-CHANNEL_USERNAME = "Membergir_ViewPlus"
+CHANNEL_USERNAME = "viewpluse"
 DAILY_COINS_AMOUNT = 3
 DAILY_COINS_COOLDOWN_HOURS = 24
 DEFAULT_SPONSOR_CHANNELS = [c.strip() for c in os.environ.get("SPONSOR_CHANNELS", "@patrickeeee,@infinitiiii2,@viewpluse").split(",") if c.strip()]
@@ -894,7 +894,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_id = str(update.effective_user.id)
 
-    # اول بررسی ورودی‌های پنل ادمین
     if update.effective_user.id == ADMIN_ID:
         data = await get_data()
         admin_state = data["states"].get(str(ADMIN_ID), {})
