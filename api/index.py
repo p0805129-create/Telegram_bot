@@ -206,6 +206,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⛔ مسدود کردن کاربر", callback_data="admin_block_user")],
         [InlineKeyboardButton("✅ آزاد کردن کاربر", callback_data="admin_unblock_user")],
         [InlineKeyboardButton("🟢 تکمیل سفارش", callback_data="admin_done_task")],
+        [InlineKeyboardButton("📝 تغییر پیگیری سفارشات", callback_data="admin_edit_claimed")],
         [InlineKeyboardButton("📢 پیام همگانی", callback_data="admin_broadcast")],
         [InlineKeyboardButton("💎 افزایش الماس به کاربر", callback_data="admin_give_coins")],
     ])
@@ -281,6 +282,25 @@ async def admin_panel_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         data["states"][str(ADMIN_ID)] = {"admin_action": "done_task"}
         await set_data(data)
         await query.edit_message_text("🟢 لطفاً شماره سفارش مورد نظر را ارسال کنید.")
+
+    elif action == "admin_edit_claimed":
+        # ارسال استیکر برای زیبایی (آیدی استیکر زیر را می‌توانید با استیکر دلخواه خود عوض کنید)
+        try:
+            await query.message.reply_sticker("CAACAgQAAxkBAAEK1s1lN7w6B4B_V-C0aX6y9rG5Q5Q5QwACDQADs2wAAb0BAAEB")
+        except Exception:
+            pass # اگر استیکر وجود نداشت، خطا را نادیده بگیر
+
+        data = await get_data()
+        data["states"][str(ADMIN_ID)] = {"admin_action": "edit_claimed"}
+        await set_data(data)
+        await query.edit_message_text(
+            "📝 لطفاً کد سفارش (یا آیدی کانال) و مقدار جدید دریافتی را به این صورت ارسال کنید:\n\n"
+            "`order_id new_amount`\n"
+            "یا\n"
+            "`@channel_username new_amount`\n\n"
+            "مثال: `17486 15`",
+            parse_mode="Markdown"
+        )
 
     elif action == "admin_broadcast":
         data = await get_data()
@@ -398,6 +418,45 @@ async def process_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
         await update.message.reply_text(f"✅ سفارش #{task_id} تکمیل شد.")
+        return True
+
+    elif admin_action == "edit_claimed":
+        parts = text_input.strip().split()
+        if len(parts) != 2:
+            await update.message.reply_text("❌ فرمت صحیح: `<order_id یا @channel> <new_amount>`", parse_mode="Markdown")
+            return True
+        target_str, amount_str = parts
+        try:
+            new_claimed = int(amount_str)
+        except ValueError:
+            await update.message.reply_text("❌ مقدار باید عدد باشد.")
+            return True
+
+        data = await get_data()
+        updated_count = 0
+
+        # اگر عدد بود، یعنی شماره سفارش
+        if target_str.isdigit():
+            task_id = int(target_str)
+            for t in data["tasks"]:
+                if t["id"] == task_id:
+                    t["claimed"] = new_claimed
+                    updated_count += 1
+                    break
+        else:
+            # اگر آیدی کانال بود
+            if not target_str.startswith("@"):
+                target_str = "@" + target_str
+            for t in data["tasks"]:
+                if t["target_id"].lower() == target_str.lower():
+                    t["claimed"] = new_claimed
+                    updated_count += 1
+
+        if updated_count > 0:
+            await set_data(data)
+            await update.message.reply_text(f"✅ مقدار دریافتی برای {target_str} با موفقیت به {new_claimed} تغییر یافت.")
+        else:
+            await update.message.reply_text("❌ سفارش فعالی با این مشخصات یافت نشد.")
         return True
 
     elif admin_action == "broadcast":
